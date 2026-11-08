@@ -1,75 +1,23 @@
-# React + TypeScript + Vite
+# Horolezec
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Digitální verze české magnetické deskové hry **Horolezec** (TOFA Semily, 1955). Závodní hra pro 2–4 hráče:
+kostkou se stoupá po 27 očíslovaných horách na vrchol, na šesti horách může figurku odpudit magnet.
 
-Currently, two official plugins are available:
+Čísla hor a texty jsou podle originálního plánu, ilustrace desky je vlastní. Zadání a výklad pravidel
+jsou v [horolezec-spec.md](horolezec-spec.md).
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Vývoj
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```bash
+npm install
+npm run dev        # vývojový server (ve vývoji jde seed zadat parametrem ?seed=123)
+npm run validate   # validátor plánu, geometrie, enginu a vyvážení
+npm run build      # validátor (prebuild) + typová kontrola + produkční build
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+## Struktura
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
-```
+- `src/lib/engine.ts` – čistý reducer `(stav, akce) → (stav, události)`, seedovaný generátor v `rng.ts`
+- `src/lib/eventPlayer.ts` – časová osa animací z událostí
+- `src/data/board.ts` – herní plán (hory, doslovné texty, účinky, pády, trasy, barevná kostka, souřadnice)
+- `scripts/validate-game.ts` – kontroly spouštěné před každým buildem

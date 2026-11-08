@@ -1,111 +1,238 @@
+@import "tailwindcss";
+
+/* Téma „Jasný den“ (hory-den). Žádná komponenta nemá barvu natvrdo – vše přes tyto proměnné. */
+:root,
+[data-theme="hory-den"] {
+  --bg: #eef4f8;
+  --surface: #ffffff;
+  --surface-2: #e3ecf2;
+  --border: #c9d6df;
+  --text: #1c2630;
+  --text-soft: #4a5866;
+  --text-muted: #5c6975;
+  --accent: #5b46b8;
+  --accent-contrast: #ffffff;
+  --sky-1: #bcdcf0;
+  --sky-2: #eef7fc;
+  --ridge-far: #a9bccb;
+  --rock: #7d8995;
+  --rock-dark: #5b6672;
+  --snow: #ffffff;
+  --hill-4: #b4c6c9;
+  --hill-3: #9db9a9;
+  --hill-2: #8fb47a;
+  --hill-1: #7fae5a;
+  --meadow: #8bb867;
+  --forest: #3e6e47;
+  --route: #c62828;
+  --field-fill: #ffffff;
+  --field-stroke: #2a333c;
+  --ring-red: #c62828;
+  --frame: #8a6a4a;
+  --table: #b58a5f;
+  --table-dark: #8c6644;
+  --good: #2e7d32;
+  --bad: #c62828;
+  --misreg: #000;
+  --misreg-opacity: 0;
+}
+
+/* Barvy horolezců – ve všech tématech stejné. */
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  --climber-red: #d32f2f;
+  --climber-blue: #1e63c6;
+  --climber-yellow: #f2c200;
+  --climber-green: #277a35;
+  --climber-ink: #1c2630;
+  --token-light: #ffffff;
+  --die-black: #1b1f24;
+  --die-white: #ffffff;
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  --ff-display: "Alfa Slab One", "Bitter", Georgia, serif;
+  --ff-body: "Bitter", Georgia, "Times New Roman", serif;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  --move-ms: 200ms;
+  --move-ease: ease-out;
+}
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--border);
+  --color-ink: var(--text);
+  --color-ink-soft: var(--text-soft);
+  --color-ink-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-accent-contrast: var(--accent-contrast);
+  --color-good: var(--good);
+  --color-bad: var(--bad);
+  --font-display: var(--ff-display);
+  --font-body: var(--ff-body);
+}
+
+/* Základ v @layer base, aby ho utility Tailwindu mohly přebít. */
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100svh;
+    background-color: var(--bg);
+    color: var(--text);
+    font-family: var(--ff-body);
+    font-weight: 400;
+    overflow-x: hidden;
+    transition: background-color 0.3s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  h1,
+  h2,
+  .font-display {
+    font-family: var(--ff-display);
+    font-weight: 400;
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  button {
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: default;
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: 2px;
   }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+/* --- Deska ------------------------------------------------------------- */
+
+.board-svg {
+  display: block;
+  overflow: visible;
+  width: 100%;
+  height: auto;
+  user-select: none;
+  -webkit-user-select: none;
+  font-family: var(--ff-body);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Figurka: vnější g = pozice (CSS transform v px), vnitřní g = efekty. */
+.token {
+  transition:
+    transform var(--move-ms) var(--move-ease),
+    opacity 280ms ease;
+  will-change: transform;
+}
+
+.token-fx {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+.token-fx.fx-hop {
+  animation: token-hop 520ms ease-out;
+}
+
+.token-fx.fx-sway {
+  animation: token-sway 400ms ease-in-out;
+}
+
+.token-fx.fx-wobble {
+  animation: token-sway 250ms ease-in-out;
+}
+
+@keyframes token-hop {
+  0% { transform: translateY(0); }
+  35% { transform: translateY(-9px); }
+  65% { transform: translateY(0); }
+  80% { transform: translateY(-3px); }
+  100% { transform: translateY(0); }
+}
+
+@keyframes token-sway {
+  0% { transform: rotate(0deg); }
+  25% { transform: rotate(-8deg); }
+  60% { transform: rotate(7deg); }
+  100% { transform: rotate(0deg); }
+}
+
+.ring-pulse {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: ring-pulse 450ms ease-out;
+}
+
+@keyframes ring-pulse {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.22); }
+  100% { transform: scale(1); }
+}
+
+.mark-pop {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: mark-pop 200ms ease-out;
+}
+
+@keyframes mark-pop {
+  from { transform: scale(0); }
+  to { transform: scale(1); }
+}
+
+.badge-pop {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: mark-pop 250ms ease-out;
+}
+
+/* --- Kostky -------------------------------------------------------------- */
+
+.die-shake {
+  animation: die-shake 300ms ease-in-out;
+}
+
+@keyframes die-shake {
+  0% { transform: rotate(0deg) translate(0, 0); }
+  20% { transform: rotate(-14deg) translate(-3px, 1px); }
+  40% { transform: rotate(10deg) translate(3px, -2px); }
+  60% { transform: rotate(-8deg) translate(-2px, 1px); }
+  80% { transform: rotate(5deg) translate(1px, 0); }
+  100% { transform: rotate(0deg) translate(0, 0); }
+}
+
+.fade-in {
+  animation: fade-in 200ms ease-out;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* --- Rozvržení hry ------------------------------------------------------- */
+
+.game-board {
+  width: min(calc(100vw - 16px), calc(62vh * 400 / 620));
+  width: min(calc(100vw - 16px), calc(62svh * 400 / 620));
+  aspect-ratio: 400 / 620;
+}
+
+@media (min-width: 900px) {
+  .game-board {
+    width: min(calc(100vw - 420px), calc(88vh * 400 / 620));
+    width: min(calc(100vw - 420px), calc(88svh * 400 / 620));
   }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
-
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-}
-
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
-}
-
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
-
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
 }
