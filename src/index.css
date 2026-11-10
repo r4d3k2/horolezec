@@ -1,6 +1,8 @@
 @import "tailwindcss";
 
-/* Téma „Jasný den“ (hory-den). Žádná komponenta nemá barvu natvrdo – vše přes tyto proměnné. */
+/* Tři témata přes CSS proměnné (data-theme na <html>). Žádná komponenta nemá barvu natvrdo. */
+
+/* ☀️ Jasný den */
 :root,
 [data-theme="hory-den"] {
   --bg: #eef4f8;
@@ -35,9 +37,84 @@
   --bad: #c62828;
   --misreg: #000;
   --misreg-opacity: 0;
+  color-scheme: light;
 }
 
-/* Barvy horolezců – ve všech tématech stejné. */
+/* 📜 Tisk 1955 */
+[data-theme="retro-1955"] {
+  --bg: #ece1c3;
+  --surface: #f4ead0;
+  --surface-2: #e2d4ae;
+  --border: #b9a77c;
+  --text: #2b2620;
+  --text-soft: #554b3d;
+  --text-muted: #635744;
+  --accent: #1f4e79;
+  --accent-contrast: #ffffff;
+  --sky-1: #c9d9da;
+  --sky-2: #ece1c3;
+  --ridge-far: #9fb3b0;
+  --rock: #6f7d84;
+  --rock-dark: #4c5a62;
+  --snow: #f7f1e0;
+  --hill-4: #aab6a5;
+  --hill-3: #9eab86;
+  --hill-2: #93a066;
+  --hill-1: #8a9a4b;
+  --meadow: #8a9a4b;
+  --forest: #4f6332;
+  --route: #a3322a;
+  --field-fill: #f7efd9;
+  --field-stroke: #2b2620;
+  --ring-red: #b3261e;
+  --frame: #7a5634;
+  --table: #9b7148;
+  --table-dark: #6e4e30;
+  --good: #4f6b2a;
+  --bad: #a3322a;
+  --misreg: #a3322a;
+  --misreg-opacity: 0.35;
+  color-scheme: light;
+}
+
+/* 🌙 Bivak v noci */
+[data-theme="hory-noc"] {
+  --bg: #0d1726;
+  --surface: #16233a;
+  --surface-2: #1d2d48;
+  --border: #2b3f5e;
+  --text: #e6edf5;
+  --text-soft: #b3c1d1;
+  --text-muted: #8a99ad;
+  --accent: #a993ff;
+  --accent-contrast: #0d1726;
+  --sky-1: #0b1424;
+  --sky-2: #1c2f4d;
+  --ridge-far: #23344d;
+  --rock: #3a4b61;
+  --rock-dark: #2a384b;
+  --snow: #cfdcea;
+  --hill-4: #2b3a55;
+  --hill-3: #283a48;
+  --hill-2: #263a3a;
+  --hill-1: #23382c;
+  --meadow: #2c4636;
+  --forest: #1d3326;
+  --route: #ff8a80;
+  --field-fill: rgba(255, 228, 160, 0.16);
+  --field-stroke: #f3dc9b;
+  --ring-red: #ff6b6b;
+  --frame: #3b2f25;
+  --table: #4a3a2c;
+  --table-dark: #34281e;
+  --good: #81c784;
+  --bad: #ff8a80;
+  --misreg: #000;
+  --misreg-opacity: 0;
+  color-scheme: dark;
+}
+
+/* Barvy horolezců a kostek – ve všech tématech stejné. */
 :root {
   --climber-red: #d32f2f;
   --climber-blue: #1e63c6;
@@ -47,6 +124,10 @@
   --token-light: #ffffff;
   --die-black: #1b1f24;
   --die-white: #ffffff;
+  --die-pip: #1c2630;
+  --die-edge: #2a333c;
+  --die-shade: #d7dee5;
+  --backdrop: rgba(13, 23, 38, 0.55);
 
   --ff-display: "Alfa Slab One", "Bitter", Georgia, serif;
   --ff-body: "Bitter", Georgia, "Times New Roman", serif;
@@ -91,6 +172,7 @@
 
   h1,
   h2,
+  h3,
   .font-display {
     font-family: var(--ff-display);
     font-weight: 400;
@@ -116,6 +198,10 @@
   }
 }
 
+.backdrop {
+  background: var(--backdrop);
+}
+
 /* --- Deska ------------------------------------------------------------- */
 
 .board-svg {
@@ -129,11 +215,15 @@
   font-variant-numeric: tabular-nums;
 }
 
+.field-hit {
+  cursor: pointer;
+}
+
 /* Figurka: vnější g = pozice (CSS transform v px), vnitřní g = efekty. */
 .token {
   transition:
     transform var(--move-ms) var(--move-ease),
-    opacity 280ms ease;
+    opacity var(--fade-ms, 280ms) ease;
   will-change: transform;
 }
 
@@ -142,17 +232,13 @@
   transform-origin: 50% 100%;
 }
 
-.token-fx.fx-hop {
-  animation: token-hop 520ms ease-out;
-}
-
-.token-fx.fx-sway {
-  animation: token-sway 400ms ease-in-out;
-}
-
-.token-fx.fx-wobble {
-  animation: token-sway 250ms ease-in-out;
-}
+.token-fx.fx-hop { animation: token-hop 520ms ease-out; }
+.token-fx.fx-sway { animation: token-sway 400ms ease-in-out; }
+.token-fx.fx-wobble { animation: token-sway 250ms ease-in-out; }
+.token-fx.fx-magnetSway { animation: token-magnet 350ms ease-in-out forwards; }
+.token-fx.fx-tip { animation: token-tip 450ms ease-in forwards; }
+.token-fx.fx-lying { transform: rotate(90deg); }
+.token-fx.fx-rise { animation: token-rise 600ms ease-out forwards; }
 
 @keyframes token-hop {
   0% { transform: translateY(0); }
@@ -167,6 +253,24 @@
   25% { transform: rotate(-8deg); }
   60% { transform: rotate(7deg); }
   100% { transform: rotate(0deg); }
+}
+
+/* Magnet figurku odpuzuje: −10° → +10° → −6°. */
+@keyframes token-magnet {
+  0% { transform: rotate(0deg); }
+  30% { transform: rotate(-10deg); }
+  70% { transform: rotate(10deg); }
+  100% { transform: rotate(-6deg); }
+}
+
+@keyframes token-tip {
+  from { transform: rotate(-6deg); }
+  to { transform: rotate(90deg); }
+}
+
+@keyframes token-rise {
+  from { transform: rotate(90deg); }
+  to { transform: rotate(0deg); }
 }
 
 .ring-pulse {
@@ -198,7 +302,51 @@
   animation: mark-pop 250ms ease-out;
 }
 
-/* --- Kostky -------------------------------------------------------------- */
+.flag-cloth {
+  transform-box: fill-box;
+  transform-origin: 100% 50%;
+}
+
+.flag-cloth.flag-wave {
+  animation: flag-wave 800ms ease-in-out;
+}
+
+@keyframes flag-wave {
+  0% { transform: skewY(0deg) scaleX(1); }
+  20% { transform: skewY(-12deg) scaleX(0.85); }
+  45% { transform: skewY(10deg) scaleX(1.05); }
+  70% { transform: skewY(-7deg) scaleX(0.92); }
+  100% { transform: skewY(0deg) scaleX(1); }
+}
+
+/* --- Kostky (3D z CSS) ---------------------------------------------------- */
+
+.die3d {
+  perspective: 260px;
+}
+
+.die3d-cube {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 700ms cubic-bezier(0.2, 0.75, 0.25, 1);
+}
+
+.die3d-face {
+  position: absolute;
+  inset: 0;
+  border-radius: 18%;
+  background: var(--die-white);
+  border: 2px solid var(--die-edge);
+  box-shadow: inset 0 0 0 2px var(--die-shade);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.die-flat {
+  display: inline-block;
+}
 
 .die-shake {
   animation: die-shake 300ms ease-in-out;
@@ -213,6 +361,8 @@
   100% { transform: rotate(0deg) translate(0, 0); }
 }
 
+/* --- Panel --------------------------------------------------------------- */
+
 .fade-in {
   animation: fade-in 200ms ease-out;
 }
@@ -222,9 +372,19 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+.strip-flash {
+  animation: strip-flash 1200ms ease-out;
+}
+
+@keyframes strip-flash {
+  0%, 60% { box-shadow: 0 0 0 4px var(--accent); transform: scale(1.02); }
+  100% { box-shadow: 0 0 0 0 transparent; transform: scale(1); }
+}
+
 /* --- Rozvržení hry ------------------------------------------------------- */
 
 .game-board {
+  position: relative;
   width: min(calc(100vw - 16px), calc(62vh * 400 / 620));
   width: min(calc(100vw - 16px), calc(62svh * 400 / 620));
   aspect-ratio: 400 / 620;
@@ -232,7 +392,31 @@
 
 @media (min-width: 900px) {
   .game-board {
-    width: min(calc(100vw - 420px), calc(88vh * 400 / 620));
-    width: min(calc(100vw - 420px), calc(88svh * 400 / 620));
+    width: min(calc(100vw - 680px), calc((100vh - 72px) * 400 / 620), calc(92vh * 400 / 620));
+    width: min(calc(100vw - 680px), calc((100svh - 72px) * 400 / 620), calc(92svh * 400 / 620));
+  }
+}
+
+/* --- Omezení pohybu ------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .token {
+    transition: opacity var(--fade-ms, 150ms) ease;
+  }
+  .token-fx,
+  .ring-pulse,
+  .mark-pop,
+  .badge-pop,
+  .flag-cloth,
+  .die-shake,
+  .fade-in,
+  .strip-flash {
+    animation: none !important;
+  }
+  .die3d-cube {
+    transition: none;
+  }
+  body {
+    transition: none;
   }
 }

@@ -1,4 +1,4 @@
-// Fáze 1: jednoduché okno vítěze (pořadí, „Hrát o další místa“, „Nová hra“).
+// Jednoduché okno vítěze (výsledková obrazovka přijde ve Fázi 3) (pořadí, „Hrát o další místa“, „Nová hra“).
 
 import type { PublicView } from "../lib/engine";
 import { kola, UI } from "../data/texts";
@@ -18,7 +18,7 @@ export function WinnerDialog({ view, onPlayOn, onNewGame }: Props) {
     .sort((a, b) => (a.c.finishedRank ?? 0) - (b.c.finishedRank ?? 0));
   const climbing = view.climbers.filter((c) => c.finishedRank === null).length;
   return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center p-4" style={{ background: "color-mix(in srgb, var(--text) 45%, transparent)" }}>
+    <div className="fixed inset-0 z-20 flex items-center justify-center p-4 backdrop">
       <div role="dialog" aria-modal="true" aria-labelledby="winner-title" className="fade-in w-full max-w-[380px] rounded-2xl border border-line bg-surface p-5 flex flex-col gap-4 shadow-xl">
         <h2 id="winner-title" className="text-[26px] leading-tight text-ink text-center">
           {winner ? `${winner.seat.name} je na vrcholu!` : "Konec hry"}

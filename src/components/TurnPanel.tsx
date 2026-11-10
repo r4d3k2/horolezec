@@ -2,10 +2,11 @@
 
 import type { PublicView } from "../lib/engine";
 import type { DisplayState } from "../lib/eventPlayer";
+import type { Handover } from "../hooks/useGame";
 import { UI } from "../data/texts";
 import { Die } from "./Die";
 
-function Dot({ color, number, size = 26 }: { color: string; number: number; size?: number }) {
+export function Dot({ color, number, size = 26 }: { color: string; number: number; size?: number }) {
   return (
     <span
       className="inline-flex items-center justify-center rounded-full font-semibold tabular shrink-0"
@@ -24,7 +25,14 @@ function Dot({ color, number, size = 26 }: { color: string; number: number; size
   );
 }
 
-export function TurnStrip({ view, display, busy }: { view: PublicView; display: DisplayState; busy: boolean }) {
+interface StripProps {
+  view: PublicView;
+  display: DisplayState;
+  busy: boolean;
+  handover: Handover | null;
+}
+
+export function TurnStrip({ view, display, busy, handover }: StripProps) {
   if (view.phase === "over" && !busy) {
     return (
       <div className="flex items-center gap-2 rounded-xl border border-line bg-surface px-3 h-10 w-full">
@@ -34,14 +42,18 @@ export function TurnStrip({ view, display, busy }: { view: PublicView; display: 
   }
   const idx = Math.max(0, view.climbers.findIndex((c) => c.id === display.current));
   const c = view.climbers[idx];
+  const flash = !busy && handover !== null && handover.climberId === c.id;
   const status = display.skipTurns[c.id] > 0
     ? `stojí (${display.skipTurns[c.id]})`
     : display.atStation[c.id]
       ? "čeká na šestku"
-      : null;
+      : c.seat.kind === "ai"
+        ? UI.ai.toLowerCase()
+        : null;
   return (
     <div
-      className="flex items-center gap-2 rounded-xl border border-line bg-surface px-3 h-10 w-full"
+      key={flash ? `flash${handover?.nonce}` : "strip"}
+      className={`flex items-center gap-2 rounded-xl border border-line bg-surface px-3 h-10 w-full ${flash ? "strip-flash" : ""}`}
       style={{ borderLeft: `6px solid var(--climber-${c.seat.color})` }}
     >
       <Dot color={c.seat.color} number={idx + 1} size={24} />
@@ -56,14 +68,19 @@ interface PanelProps {
   view: PublicView;
   display: DisplayState;
   busy: boolean;
+  handover: Handover | null;
   onRoll: () => void;
 }
 
-export function TurnPanel({ view, display, busy, onRoll }: PanelProps) {
-  const current = view.climbers.find((c) => c.id === display.current);
-  const canRoll = !busy && view.phase === "playing";
-  const standing = current ? (display.skipTurns[current.id] ?? 0) > 0 : false;
-  const label = standing ? "Stojí – další tah" : UI.roll;
+export function TurnPanel({ view, display, busy, handover, onRoll }: PanelProps) {
+  const current = view.climbers.find((c) => c.id === display.current) ?? view.climbers[view.current];
+  const isAi = current.seat.kind === "ai";
+  const canRoll = !busy && view.phase === "playing" && !isAi;
+  const standing = (display.skipTurns[current.id] ?? 0) > 0;
+  let label: string = UI.roll;
+  if (view.phase === "playing" && isAi) label = `${current.seat.name} hází…`;
+  else if (standing) label = "Stojí – další tah";
+  else if (handover && handover.climberId === current.id) label = `${current.seat.name}, hoď kostkou`;
   return (
     <div className="flex flex-col gap-2 w-full">
       <div className="flex items-center gap-3">
@@ -77,7 +94,7 @@ export function TurnPanel({ view, display, busy, onRoll }: PanelProps) {
           type="button"
           onClick={onRoll}
           disabled={!canRoll}
-          className="flex-1 h-16 rounded-2xl bg-accent text-accent-contrast text-lg font-semibold px-4 shadow-sm transition-opacity disabled:opacity-50"
+          className="flex-1 min-w-0 h-16 rounded-2xl bg-accent text-accent-contrast text-lg font-semibold px-3 shadow-sm transition-opacity disabled:opacity-50 leading-tight"
         >
           {label}
         </button>
@@ -90,12 +107,11 @@ export function TurnPanel({ view, display, busy, onRoll }: PanelProps) {
             </p>
           ))
         ) : (
-          <p className="text-ink-muted">Hoď kostkou a vystoupej o tolik hor.</p>
+          <p className="text-ink-muted">{UI.hint}</p>
         )}
       </div>
     </div>
   );
 }
 
-export { Dot };
 export default TurnPanel;

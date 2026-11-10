@@ -7,13 +7,19 @@ import { narrate, type NameOf } from "../data/texts";
 import type { GameEvent, PublicClimber, PublicView } from "./engine";
 import { fieldCenter, findRoute, layoutTokens, routePoints, type XY } from "./geometry";
 
-export type TokenFx = "none" | "hop" | "sway" | "wobble";
+export type TokenFx = "none" | "hop" | "sway" | "wobble" | "magnetSway" | "tip" | "lying" | "rise";
+
+export interface TokenFxState {
+  kind: TokenFx;
+  nonce: number;
+  ms?: number;                                      // vlastní délka animace (jinak podle CSS)
+}
 
 export interface DisplayState {
   current: string;                                  // id horolezce na tahu
   positions: Record<string, number>;                // hora každé figurky
-  overrides: Record<string, XY>;                    // přesné souřadnice během jízdy po trase / odskoku
-  hidden: Record<string, boolean>;                  // prolnutí (zjednodušený pád)
+  overrides: Record<string, XY>;                    // přesné souřadnice během jízdy po trase, odskoku a pádu
+  hidden: Record<string, boolean>;                  // prolnutí (omezení pohybu)
   atStation: Record<string, boolean>;
   skipTurns: Record<string, number>;
   revealed: Record<string, number[]>;
@@ -22,10 +28,13 @@ export interface DisplayState {
   dieNonce: number;
   colorDie: DieColor | null;                        // barevná kostka jen když se jí hází
   colorNonce: number;
-  fx: Record<string, { kind: TokenFx; nonce: number }>;
+  fx: Record<string, TokenFxState>;
   pulse: { field: number; nonce: number } | null;   // pulz červeného kroužku
+  ride: string | null;                              // kdo jede lanovkou (kabinka jede s figurkou)
+  flagNonce: number;                                // zavlání vlajky na vrcholu
   moveMs: number;                                   // délka přechodu pozice figurek v tomto snímku
   moveEase: string;
+  fadeMs: number;
   lines: string[];                                  // hlášky poslední akce
 }
 
@@ -34,8 +43,16 @@ export interface Frame {
   duration: number;                                 // jak dlouho snímek drží (ms)
 }
 
+export interface TimelineOptions {
+  reduced?: boolean;                                // prefers-reduced-motion: vše 0 ms, jen pád 150 ms prolnutí
+  board?: BoardDef;
+}
+
+/** Stůl pod deskou: sem figurka spadne. */
+export const TABLE_Y = 600;
+
 export const TIMING = {
-  roll: 600,
+  roll: 700,
   stepMax: 200,
   stepTotalMax: 1200,
   blocked: 450,
@@ -44,12 +61,18 @@ export const TIMING = {
   zpet: 300,
   cernaSway: 250,
   cernaSlide: 800,
-  fadeOut: 300,
-  fadeIn: 320,
+  fallSway: 350,
+  fallDrop: 450,
+  fallLie: 350,
+  fallRise: 600,
+  knockDrop: 400,
+  knockLie: 250,
+  knockRise: 550,
   info: 400,
   stationEnter: 250,
   extraRoll: 300,
   summit: 800,
+  reducedFade: 150,
 };
 
 /** Zobrazovaný stav přesně podle veřejného pohledu enginu. */
@@ -79,8 +102,11 @@ export function displayFromView(view: PublicView, prev?: DisplayState): DisplayS
     colorNonce: prev?.colorNonce ?? 0,
     fx: prev?.fx ?? {},
     pulse: null,
+    ride: null,
+    flagNonce: prev?.flagNonce ?? 0,
     moveMs: 300,
     moveEase: "ease-out",
+    fadeMs: 280,
     lines: prev?.lines ?? [],
   };
 }
@@ -101,8 +127,10 @@ export function buildTimeline(
   events: GameEvent[],
   climbers: PublicClimber[],
   nameOf: NameOf,
-  board: BoardDef = BOARD,
+  opts: TimelineOptions = {},
 ): Frame[] {
+  const board = opts.board ?? BOARD;
+  const reduced = !!opts.reduced;
   const frames: Frame[] = [];
   const narration = narrate(events, nameOf);
   let st: DisplayState = {
@@ -112,22 +140,61 @@ export function buildTimeline(
     lastMove: null,
     colorDie: null,
     pulse: null,
+    ride: null,
+    fadeMs: reduced ? TIMING.reducedFade : 280,
     lines: [],
   };
 
+  /** Snímek: při omezení pohybu bez přechodů a s nulovou délkou. */
   const push = (patch: Partial<DisplayState>, duration: number) => {
     st = { ...st, ...patch };
-    frames.push({ state: st, duration });
+    if (reduced) st = { ...st, moveMs: 0 };
+    frames.push({ state: st, duration: reduced ? 0 : duration });
   };
-  const fx = (id: string, kind: TokenFx) => ({ ...st.fx, [id]: { kind, nonce: (st.fx[id]?.nonce ?? 0) + 1 } });
+  const fx = (id: string, kind: TokenFx, ms?: number) => ({
+    ...st.fx,
+    [id]: { kind, nonce: (st.fx[id]?.nonce ?? 0) + 1, ms },
+  });
   const xyOf = (id: string): XY => {
     const places = climbers.map((c, index) => ({ id: c.id, index, color: c.seat.color, pos: st.positions[c.id] ?? 0 }));
     return st.overrides[id] ?? layoutTokens(places, board)[id] ?? [0, 0];
   };
 
+  /** Pád na stůl a návrat na cíl (magnet, vyhazování). */
+  const fallToTable = (id: string, to: number, drop: number, lie: number, rise: number, patch: Partial<DisplayState>, risePatch: Partial<DisplayState> = {}) => {
+    if (reduced) {
+      // jen 150 ms prolnutí
+      st = { ...st, hidden: { ...st.hidden, [id]: true } };
+      frames.push({ state: st, duration: TIMING.reducedFade });
+      st = { ...st, ...patch, ...risePatch, positions: { ...st.positions, [id]: to }, hidden: without(st.hidden, id), moveMs: 0 };
+      frames.push({ state: st, duration: TIMING.reducedFade });
+      return;
+    }
+    const [x] = xyOf(id);
+    push({ ...patch, overrides: { ...st.overrides, [id]: [x, TABLE_Y] }, moveMs: drop, moveEase: "ease-in", fx: fx(id, "tip", drop) }, drop);
+    push({ fx: fx(id, "lying") }, lie);
+    push({
+      ...risePatch,
+      positions: { ...st.positions, [id]: to },
+      overrides: without(st.overrides, id),
+      moveMs: rise,
+      moveEase: "ease-out",
+      fx: fx(id, "rise", rise),
+    }, rise);
+  };
+
   for (let i = 0; i < events.length; i++) {
     const e = events[i];
     const before = frames.length;
+    // U pádu se hláška ukáže hned na začátku, ne až po návratu figurky.
+    let early = false;
+    if (e.type === "magnetFall" || e.type === "knockOut") {
+      const add = narration.filter((l) => l.at === i).map((l) => l.text);
+      if (add.length > 0) {
+        st = { ...st, lines: [...st.lines, ...add] };
+        early = true;
+      }
+    }
 
     switch (e.type) {
       case "turn":
@@ -179,19 +246,21 @@ export function buildTimeline(
         const id = e.climberId;
         if (e.how === "posun" || e.how === "lanovka") {
           const route = findRoute(e.from, e.to, board);
-          const total = e.how === "posun" ? TIMING.posun : TIMING.lanovka;
-          if (route) {
-            const segs = e.how === "posun" ? 8 : 11;
+          const lanovka = e.how === "lanovka";
+          const total = lanovka ? TIMING.lanovka : TIMING.posun;
+          if (route && !reduced) {
+            const segs = lanovka ? 11 : 8;
             const per = Math.round(total / segs);
             const pts = routePoints(route, segs, board);
             pts.slice(0, -1).forEach((p) => {
-              push({ overrides: { ...st.overrides, [id]: p }, moveMs: per, moveEase: "linear" }, per);
+              push({ overrides: { ...st.overrides, [id]: p }, moveMs: per, moveEase: "linear", ride: lanovka ? id : null }, per);
             });
             push({
               positions: { ...st.positions, [id]: e.to },
               overrides: without(st.overrides, id),
               moveMs: per,
               moveEase: "ease-out",
+              ride: null,
             }, per);
           } else {
             push({ positions: { ...st.positions, [id]: e.to }, moveMs: total, moveEase: "ease-in-out" }, total);
@@ -207,18 +276,17 @@ export function buildTimeline(
       }
 
       case "magnetFall": {
-        // Fáze 1: zjednodušený pád – prolnutí ven, značka magnetu, prolnutí dovnitř na cíli.
+        // Magnetický pád: kývání, odpadnutí na stůl, ležení, zvednutí a přesun na cíl pádu.
         const id = e.climberId;
         const rev = st.revealed[id] ?? [];
-        push({ hidden: { ...st.hidden, [id]: true } }, TIMING.fadeOut);
-        push({
-          positions: { ...st.positions, [id]: e.to },
-          moveMs: 0,
+        if (!reduced) push({ fx: fx(id, "magnetSway") }, TIMING.fallSway);
+        fallToTable(id, e.to, TIMING.fallDrop, TIMING.fallLie, TIMING.fallRise, {
           revealed: { ...st.revealed, [id]: rev.includes(e.at) ? rev : [...rev, e.at] },
           atStation: { ...st.atStation, [id]: false },
+        }, {
+          // odznak čekání až po zvednutí figurky
           skipTurns: { ...st.skipTurns, [id]: e.wait },
-        }, 60);
-        push({ hidden: without(st.hidden, id), moveMs: 200 }, TIMING.fadeIn);
+        });
         break;
       }
 
@@ -242,21 +310,17 @@ export function buildTimeline(
         push({}, TIMING.extraRoll);
         break;
 
-      case "knockOut": {
-        const v = e.victimId;
-        push({ hidden: { ...st.hidden, [v]: true } }, TIMING.fadeOut);
-        push({
-          positions: { ...st.positions, [v]: e.to },
-          atStation: { ...st.atStation, [v]: false },
-          moveMs: 0,
-        }, 60);
-        push({ hidden: without(st.hidden, v), moveMs: 200 }, TIMING.fadeIn);
+      case "knockOut":
+        // Oběť spadne na stůl a přesune se pod horu.
+        fallToTable(e.victimId, e.to, TIMING.knockDrop, TIMING.knockLie, TIMING.knockRise, {
+          atStation: { ...st.atStation, [e.victimId]: false },
+        });
         break;
-      }
 
       case "summit":
         push({
           fx: fx(e.climberId, "hop"),
+          flagNonce: st.flagNonce + 1,
           atStation: { ...st.atStation, [e.climberId]: false },
           skipTurns: { ...st.skipTurns, [e.climberId]: 0 },
           moveMs: 300,
@@ -270,7 +334,7 @@ export function buildTimeline(
     }
 
     // Hlášky, které patří za tuto událost.
-    const add = narration.filter((l) => l.at === i).map((l) => l.text);
+    const add = early ? [] : narration.filter((l) => l.at === i).map((l) => l.text);
     if (add.length > 0) {
       const lines = [...st.lines, ...add];
       if (frames.length > before) {

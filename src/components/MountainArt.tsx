@@ -112,6 +112,13 @@ function MountainArtImpl({ board = BOARD }: { board?: BoardDef }) {
         );
       })}
 
+      {/* Tisk 1955: druhý tisk masivu s posunem soutisku (v ostatních tématech průhlednost 0) */}
+      <polygon
+        points={pts([[0, 280], ...MASSIF, [400, 280]].map(([x, y]): Pt => [x + 1.5, y + 1]))}
+        fill="var(--misreg)"
+        style={{ opacity: "var(--misreg-opacity)", mixBlendMode: "multiply" }}
+      />
+
       {/* 2. Kopečky pod horami, odzadu dopředu: hřeben řady, pak kopečky řady */}
       {ROWS.map((row) => (
         <g key={row[0]}>
