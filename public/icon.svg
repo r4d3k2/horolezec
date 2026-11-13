@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Horolezec: dřevěná figurka na vrcholku. Obsah je uvnitř bezpečné zóny (maskable). -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9fcbe8"/>
+      <stop offset="1" stop-color="#eef7fc"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#sky)"/>
+  <path d="M0 336 L64 286 L122 312 L186 252 L250 300 L330 262 L408 300 L512 268 V512 H0 Z" fill="#a9bccb"/>
+  <path d="M28 476 L224 270 Q256 252 288 270 L484 476 Z" fill="#7d8995"/>
+  <path d="M256 258 Q274 262 288 270 L484 476 L318 476 Z" fill="#5b6672"/>
+  <path d="M224 270 Q256 252 288 270 L334 318 L310 308 L288 326 L262 308 L236 326 L212 306 L180 318 Z" fill="#ffffff"/>
+  <path d="M0 448 Q128 410 256 446 T512 438 V512 H0 Z" fill="#7fae5a"/>
+  <path d="M0 482 Q140 458 270 480 T512 474 V512 H0 Z" fill="#3e6e47" opacity="0.45"/>
+  <ellipse cx="256" cy="265" rx="40" ry="7" fill="#1c2630" opacity="0.22"/>
+  <g transform="translate(256 265) scale(5.6)" stroke="#1c2630" stroke-width="0.9" stroke-linejoin="round">
+    <path d="M -4.9 0 A 7 7 0 1 1 4.9 0 Z" fill="#d32f2f"/>
+    <path d="M -5.2 -9.5 L -3 -19 L 3 -19 L 5.2 -9.5 Z" fill="#d32f2f"/>
+    <path d="M -3.9 -15.6 L 3.9 -15.6 L 4.5 -13 L -4.5 -13 Z" fill="#ffffff" stroke="none"/>
+    <circle cx="0" cy="-21.5" r="5.5" fill="#d32f2f"/>
+  </g>
+</svg>

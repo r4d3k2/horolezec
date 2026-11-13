@@ -1,6 +1,7 @@
 // Geometrie desky: Bézierovy trasy a rozmístění figurek. Čisté funkce bez Reactu.
 
 import { BOARD, type BoardDef, type ClimberColor, type Route } from "../data/board";
+import { HUB_FIELD } from "./engine";
 
 export type XY = [number, number];
 
@@ -43,6 +44,7 @@ export interface TokenPlace {
   index: number;          // pořadí horolezce (0–3)
   color: ClimberColor;
   pos: number;
+  waiting?: boolean;      // stojí (skipTurns > 0): na hoře 13 jde na barevné místo
 }
 
 const SPREAD: Record<number, number[]> = {
@@ -72,17 +74,47 @@ export function layoutTokens(tokens: TokenPlace[], board: BoardDef = BOARD): Rec
   for (const [n, list] of byField) {
     list.sort((a, b) => a.index - b.index);
     const [cx, cy] = fieldCenter(n, board);
-    if (n === board.colorDie.blackTo && list.length > 1) {
-      // Hora 13: další figurky na vedlejší místa.
-      const hub = board.spots.hub13;
-      const places: XY[] = list.length === 4
-        ? [[cx - 8, cy], [hub[0][0], hub[0][1]], [hub[1][0], hub[1][1]], [cx + 8, cy]]
-        : [[cx, cy], [hub[0][0], hub[0][1]], [hub[1][0], hub[1][1]]];
-      list.forEach((t, i) => { out[t.id] = places[i]; });
+    if (n === HUB_FIELD) {
+      hora13(list, [cx, cy], board).forEach(([id, xy]) => { out[id] = xy; });
       continue;
     }
     const offsets = SPREAD[list.length] ?? SPREAD[4];
     list.forEach((t, i) => { out[t.id] = [cx + offsets[i], cy]; });
   }
+  return out;
+}
+
+/**
+ * Hora 13 má tři místa: kotouč a dvě barevná místa (spots.hub13). Figurky se nepřekrývají:
+ * čekající (skipTurns > 0) stojí na barevných místech, ostatní na kotouči. Kdo se do své skupiny
+ * nevejde, doplní volná místa v pořadí kotouč → první → druhé barevné místo. Rozestoupí se jen
+ * čtvrtá figurka (sdílí místo své skupiny: kotouč, nebo druhé barevné místo).
+ */
+function hora13(list: TokenPlace[], disc: XY, board: BoardDef): [string, XY][] {
+  const hub = board.spots.hub13;
+  const places: XY[] = [disc, [hub[0][0], hub[0][1]], [hub[1][0], hub[1][1]]];
+  const slots: TokenPlace[][] = [[], [], []];
+  const rest: TokenPlace[] = [];
+  for (const t of list) {
+    if (t.waiting) {
+      const k = slots[1].length === 0 ? 1 : slots[2].length === 0 ? 2 : -1;
+      if (k > 0) slots[k].push(t);
+      else rest.push(t);
+    } else if (slots[0].length === 0) {
+      slots[0].push(t);
+    } else {
+      rest.push(t);
+    }
+  }
+  for (const t of rest) {
+    const free = slots.findIndex((sl) => sl.length === 0);
+    if (free >= 0) slots[free].push(t);
+    else slots[t.waiting ? 2 : 0].push(t);
+  }
+  const out: [string, XY][] = [];
+  slots.forEach((sl, k) => {
+    const offsets = SPREAD[sl.length] ?? SPREAD[4];
+    sl.forEach((t, i) => out.push([t.id, [places[k][0] + offsets[i], places[k][1]]]));
+  });
   return out;
 }

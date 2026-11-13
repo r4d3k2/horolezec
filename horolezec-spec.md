@@ -4,8 +4,9 @@ Work directly on the main branch, do not create new branches, do not use git wor
 
 Implement this in **3 phases**. After each phase, stop and wait for my confirmation before continuing to the next phase. Do not run `npm run dev` — the dev server is managed by Claude Code Desktop Preview. Do not fetch localhost — I'll check the result in Preview myself.
 
-> Specifikace v2.0 · 2026-11-08 · repo `r4d3k2/horolezec` · Cesta B (Claude Code → GitHub → Vercel)
+> Specifikace v2.1 · 2026-11-13 · repo `r4d3k2/horolezec` · Cesta B (Claude Code → GitHub → Vercel)
 > Změna proti v1.0: herní plán a pravidla podle fotografie originálního plánu (27 hor). Dotvořený plán se 61 poli, skoby a úrovně počítače jsou vypuštěné.
+> Změna proti v2.0 (2026-11-13, po kontrole Fáze 2): pomalejší pohyb jako u deskové hry a „Tempo hry“ místo „Rychlosti počítače“; vyhazování je výchozí pravidlo (na hoře jen jeden horolezec, kontrola po každém příchodu); rozestavení figurek na hoře 13; nový invariant a meze vyvážení ve validátoru.
 
 ---
 
@@ -78,7 +79,7 @@ Všechno v tabulce je nastavitelné v `Rules` nebo v datech `board.ts`, aby šlo
 | Zkouška magnetu po přesunu | ano, na každé hoře, kam figurka dorazí (i po „1 zpět“, černé na kostce, pádu na horu 13) | figurka se fyzicky pokládá na horu | — |
 | Přesný hod na vrchol | ne | neznámé | `exactFinish` |
 | Šestka hází znovu | ne | neznámé | `sixAgain` |
-| Vyhazování jako v Člověče | ne | hra je popsaná jako „variace Člověče“, pravidlo ale neznáme | `knockOut` |
+| Vyhazování jako v Člověče | **ano (v2.1):** na hoře může stát jen jeden horolezec; kdo přijde na obsazenou horu, pošle druhého zpět pod horu (mimo start, horu 13 a vrchol) | náš výklad: hra je popsaná jako variace Člověče, nezlob se a hora 13 i vrchol mají místa navíc – to dává smysl, jen když hora normálně unese jednu figurku | `knockOut` vypnout |
 
 ---
 
@@ -112,9 +113,10 @@ Pole `0` = **pod horou** (start, mimo plán, libovolný počet figurek). Hory `1
 3. Jinak hodí kostkou a postoupí o hozený počet hor. Kdyby přelezl vrchol: bez `exactFinish` stojí na vrcholu, s ním tah propadá (`overshoot`).
 4. Je-li cílová hora s červeným kroužkem a `redRing: "zakaz"`, figurka se nepohne a tah propadá (`blocked`).
 5. **Příchod na horu** (funkce `land`):
-   - a) **Zkouška magnetu** (jen hory 12, 13, 18, 21, 23, 25 a jen při `magnets`): odpudí-li magnet figurku → pád podle pravidla hory, tah končí. Vede-li pád na jinou horu se zkouškou (25 → 13), zkouší se magnet i tam.
-   - b) Jinak se hora zapíše jako „známá bezpečná“ (jen u hor se zkouškou) a provede se účinek hory. Posun 7 → 11 i 19 → 18 je nový příchod. Zvláštní účinky se nikdy neřetězí, protože cíle posunů účinek nemají (validátor to hlídá).
-6. Volitelně `knockOut` a `sixAgain` (viz tabulka volitelných pravidel).
+   - a) **Zkouška magnetu** (jen hory 12, 13, 18, 21, 23, 25 a jen při `magnets`): odpudí-li magnet figurku → pád podle pravidla hory, tah končí. Pád na jinou horu (1, 11, 13) je nový příchod: na 13 se zkouší magnet i tam (25 → 13), na 1 a 11 se vyhazuje (bod b).
+   - b) **Vyhazování** (při `knockOut`, v2.1): figurka na hoře zůstává, takže kdo tu stál, jde zpět pod horu (pole 0) a přijde o čekání u lanovky i o zbývající kola stání. Výjimky: start (0), hora 13 a vrchol (27) unesou libovolný počet horolezců. Kontrola proběhne po každém příchodu – po hodu, po posunu 7 → 11 i 19 → 18, po pádu na horu 1 nebo 11 – a vždy před účinkem hory, tedy i před hodem navíc z hor 5 a 15. Kdo na hoře spadne (bod a), nikoho nevyhodí; vyhazuje až tam, kam spadl.
+   - c) Jinak se hora zapíše jako „známá bezpečná“ (jen u hor se zkouškou, ještě před bodem b) a provede se účinek hory. Posun 7 → 11 i 19 → 18 je nový příchod. Zvláštní účinky se nikdy neřetězí, protože cíle posunů účinek nemají (validátor to hlídá).
+6. Volitelně `sixAgain` (viz tabulka volitelných pravidel).
 7. Na tahu je další horolezec v pořadí, který nedokončil.
 
 Začínajícího hráče vylosuje generátor, dál se jde podle indexu dokola.
@@ -143,7 +145,7 @@ Začínajícího hráče vylosuje generátor, dál se jde podle indexu dokola.
 | `colorDie` | `jinaNezCerna` | Viz Barevná kostka. |
 | `exactFinish` | vypnuto | Na vrchol jen přesným hodem. |
 | `sixAgain` | vypnuto | Po šestce hod navíc, jen když tah skončil normálně (bez pádu, zákazu, posunu zpět, mimo stanici). |
-| `knockOut` | vypnuto | Kdo skončí na hoře s jiným horolezcem (mimo 0, 13 a vrchol), ten druhý začíná znovu pod horou. |
+| `knockOut` | zapnuto (v2.1) | Na hoře může stát jen jeden horolezec: kdo přijde na obsazenou horu (mimo 0, 13 a vrchol), toho druhého pošle zpět pod horu (ztratí čekání u lanovky i zbývající stání). Vypnuto = chování v2.0 bez vyhazování. |
 
 ### Konec hry
 
@@ -255,7 +257,7 @@ export interface Rules {
 }
 export const DEFAULT_RULES: Rules = {
   magnets: true, redRing: "zakaz", colorDie: "jinaNezCerna",
-  exactFinish: false, sixAgain: false, knockOut: false,
+  exactFinish: false, sixAgain: false, knockOut: true,     // v2.1: vyhazování je výchozí
 };
 ```
 
@@ -413,13 +415,16 @@ spots: {
    - `revealed ⊆ danger`, `knownSafe ∩ danger = ∅`;
    - při `redRing: "zakaz"` nikdo nestojí na hoře s červeným kroužkem;
    - `atStation` jen na hoře 20;
+   - při `knockOut` (v2.1) nestojí dva horolezci na stejné hoře, mimo 0, 13 a 27;
    - pořadí dokončení bez duplicit, hra skončí do 1 000 tahů vítěze;
    - `replayPositions(pozice před akcí, události)` = pozice po akci;
    - `JSON.stringify(toPublicView(state))` neobsahuje `"danger"`, `"pole"` ani `"fieldPoles"`.
 4. **Determinismus:** dva běhy se stejným seedem a stejnými akcemi dají identický JSON.
-5. **Vyvážení** (výchozí pravidla, 2 horolezci, 20 000 her, seed 12345). Vypiš tabulku: p10, p50, p90, p99 a max počtu kol do prvního vítěze, pády na hru, % her s pádem, % her s návratem pod horu (pád na 12 nebo 21), % her vyhraných lanovkou, % her se zákazem červeného kroužku. Pro informaci vypiš i 3 a 4 horolezce. **Selže**, když p50 mimo 10–16, p90 > 34, max ≥ 300, pád < 80 %, návrat pod horu mimo 45–72 %, výhra lanovkou mimo 60–85 %, zákaz < 85 %.
-   - Reference (Python, stejný výklad pravidel, ověřeno 2026-11-08): 2 horolezci p10 7, p50 13, p90 28, p99 48, max 93; 3,18 pádu na hru; 88,0 % her s pádem; 58,5 % s návratem pod horu; 72,3 % vyhraných lanovkou; 93,5 % se zákazem. 3 horolezci p50 11, p90 21. 4 horolezci p50 10, p90 18.
-   - Varianty pro informaci (2 horolezci, p50): bez magnetů 8; červený kroužek bez účinku 9; barevná kostka jen vlastní barva 16 (lanovkou vyhráno jen 19 %); přesný hod 14; šestka znovu 12; vyhazování 15.
+5. **Vyvážení** (výchozí pravidla v2.1 včetně vyhazování, 2 horolezci, 20 000 her, seed 12345). Vypiš tabulku: p10, p50, p90, p99 a max počtu kol do prvního vítěze, pády na hru, % her s pádem, % her s návratem pod horu pádem (pád na 12 nebo 21), % her vyhraných lanovkou, % her se zákazem červeného kroužku, vyhození na hru a % her s aspoň jedním vyhozením. Pro informaci vypiš i 3 a 4 horolezce. **Selže**, když p50 mimo 11–18, p90 > 38, max ≥ 300, pád < 80 %, návrat pod horu mimo 45–75 %, výhra lanovkou mimo 60–85 %, zákaz < 85 %, vyhazování mimo 50–80 %.
+   - Reference v2.1 (Python, stejný výklad pravidel, dodal zadavatel 2026-11-13): 2 horolezci p50 15, p90 32, p99 55, max 139; 88 % her s pádem; 60 % s návratem pod horu pádem; 72 % vyhraných lanovkou; 94 % se zákazem; 64 % s vyhozením (1,2 na hru). 3 horolezci p50 13 a 3,8 vyhození na hru, 4 horolezci p50 12 a 7,6 vyhození na hru.
+   - Ověřeno validátorem v TypeScriptu (2026-11-13, jiný generátor než Python): 2 horolezci p10 7, p50 15, p90 31, p99 54, max 138; 3,33 pádu na hru; 88,6 % s pádem; 60,6 % pod horu; 71,5 % lanovkou; 94,2 % se zákazem; 64,0 % s vyhozením (1,23 na hru). 3 horolezci p50 13, 3,84 vyhození. 4 horolezci p50 13, 7,58 vyhození. Pořadí „vyhazování až po zkoušce magnetu“ dává shodu s Pythonem; „před zkouškou“ by dalo 1,49 vyhození na hru.
+   - Varianty pro informaci (2 horolezci, p50, TS): bez magnetů 9; červený kroužek bez účinku 10; barevná kostka jen vlastní barva 17 (lanovkou vyhráno jen 20 %); přesný hod 15; šestka znovu 14; bez vyhazování 13 (= výchozí pravidla v2.0).
+   - Reference v2.0 bez vyhazování (Python, 2026-11-08): p10 7, p50 13, p90 28, p99 48, max 93; 3,18 pádu; 88,0 % s pádem; 58,5 % pod horu; 72,3 % lanovkou; 93,5 % se zákazem.
 
 ---
 
@@ -501,7 +506,8 @@ Seznam hor se štítkem: číslo, ikona, doslovný text a výklad v aplikaci. Na
 ### Figurka (`ClimberToken.tsx`)
 
 - Silueta dřevěné figurky: kulatá hlava, tělo, dole seříznutá koule (jako originál). Barva horolezce, přes tělo bílý vodorovný pruh, tmavý obrys. V hlavě číslo hráče 1–4 (přístupnost, nejen barva).
-- Výška ≈ 26 jednotek, pata na středu kotouče. Víc figurek na jedné hoře se rozestoupí (posun −8 / +8). Na hoře 13 se další figurky postaví na vedlejší místa `hub13`. Na vrcholu stojí každá na svém barevném místě, pod horou na startovním místě podle pořadí.
+- Výška ≈ 26 jednotek, pata na středu kotouče. Víc figurek na jedné hoře se rozestoupí (posun −8 / +8; s vyhazováním jen na okamžik, než oběť spadne). Na vrcholu stojí každá na svém barevném místě, pod horou na startovním místě podle pořadí.
+- **Hora 13 (v2.1):** kotouč hory i obě vedlejší místa `hub13` patří hoře 13 a figurky se tu nepřekrývají. Kdo čeká (`skipTurns > 0`), stojí na barevném místě `hub13`, ostatní na kotouči. Kdo se do své skupiny nevejde, doplní volná místa v pořadí kotouč → první → druhé barevné místo. Rozestoupí se (−8 / +8) jen čtvrtá figurka: sdílí místo své skupiny (kotouč, u čekajících druhé barevné místo). Kdo dočeká, přejde z barevného místa na kotouč.
 - **Dvě vnořené skupiny:**
   - vnější `<g>` = pozice: `style={{ transform: \`translate(${x}px, ${y}px)\` }}`, `transition: transform var(--move-ms) ease-out`. Nikdy SVG atribut `transform` (v Safari by se neanimoval).
   - vnitřní `<g>` = efekty (kývání, otočení při pádu, poskok): keyframes, `transform-box: fill-box; transform-origin: 50% 100%`.
@@ -527,29 +533,35 @@ Seznam hor se štítkem: číslo, ikona, doslovný text a výklad v aplikaci. Na
 
 Engine vrátí stav i seznam událostí. UI zobrazuje pozice ze „zobrazovaného stavu“, který přehrávač posouvá událost po události. Na konci se zobrazovaný stav rovná stavu enginu. Během přehrávání jsou tlačítka zablokovaná. Klepnutí na desku přehrávání dokončí okamžitě.
 
+Časování v2.1 je pomalé jako u deskové hry (hodnoty pro tempo Normálně):
+
 | Událost | Animace | Trvání |
 |---|---|---|
-| `roll`, `colorRoll` | kostka | 600 ms (F2: 700 ms) |
-| `step` | figurka přeskočí na další horu | 200 ms na horu, celý pohyb nejvýš 1200 ms |
-| `blocked` | figurka poskočí k červenému kroužku a vrátí se, kroužek pulzne | 450 ms |
-| `move` posun | po čárkované trase 7 → 11 | 800 ms |
-| `move` lanovka | po trase na vrchol, s figurkou jede kabinka | 1100 ms |
-| `move` zpet | 19 → 18 | 300 ms |
-| `move` cerna | krátké kývnutí a sjezd na horu 13 po přímce `ease-in` | 250 + 800 ms |
-| `magnetFall` | **magnetický pád** (níže) | ~1750 ms |
+| `roll`, `colorRoll` | kostka se protočí, pak je chvíli vidět výsledek | 900 + 400 ms |
+| `step` | figurka přeskočí na další horu s poskokem: zvedne se asi o 12 jednotek v oblouku a dopadne | 420 ms na horu, celkový pohyb bez stropu |
+| příchod na horu | pauza po dopadu, než se projeví účinek hory (pád, posun, čekání, stanice, barevná kostka, hod navíc z 5 a 15, vyhazování) | 450 ms |
+| `blocked` | figurka poskočí k červenému kroužku a vrátí se, kroužek pulzne | 900 ms |
+| `move` posun | po čárkované trase 7 → 11, s rozjezdem a dojezdem | 1400 ms |
+| `move` lanovka | po trase na vrchol, s figurkou jede kabinka | 2000 ms |
+| `move` zpet | 19 → 18 poskokem | 600 ms |
+| `move` cerna | krátké kývnutí a sjezd na horu 13 po přímce `ease-in` | 400 + 1300 ms |
+| `magnetFall` | **magnetický pád** (níže) | 600 + 650 + 700 + 1000 ms |
 | `wait`, `skip`, `stationMiss` | hláška, figurka se lehce zhoupne | 400 ms |
 | `stationEnter` | odznak „6“ se objeví | 250 ms |
-| `knockOut` | oběť spadne na stůl a přesune se pod horu | 1200 ms |
-| `summit` | figurka přejde na své barevné místo, poskočí, vlajka zavlaje | 800 ms |
-| pauza před tahem počítače | Normálně 700 ms / Rychle 250 ms / Okamžitě 0 ms a bez animací | |
+| `knockOut` | oběť spadne na stůl, leží a přejde na své startovní místo pod horou | 1600 ms (500 + 400 + 700) |
+| `summit` | figurka na svém barevném místě poskočí, vlajka zavlaje | 1400 ms |
+| pauza mezi tahy | konečný stav chvíli drží, pak je na tahu další | 500 ms |
+| pauza před tahem počítače | proužek „Na tahu“ ukazuje počítač, tlačítko „Bára hází…“ | 1400 ms |
+
+**Tempo hry** (v2.1, nahrazuje „Rychlost počítače“ Normálně / Rychle / Okamžitě): Pomalu ×1,4 / Normálně ×1 / Rychle ×0,5. Násobí všechny animace i pauzy včetně CSS animací (kostka, pulz kroužku, značky, vlajka, zvýraznění proužku). Volí se v menu hry a ukládá do nastavení. Klepnutí na desku dál okamžitě dokončí právě běžící přehrávání i s pauzou mezi tahy.
 
 **Magnetický pád (jediný výrazný efekt):**
-1. 350 ms kývání: vnitřní skupina −10° → +10° → −6° (magnet figurku odpuzuje).
-2. 450 ms odpadnutí: vnější skupina sjede na stůl (stejné x, y = 600) s `ease-in` (gravitace), vnitřní se otočí o 90° (figurka leží). Současně se u hory objeví značka magnetu (scale 0 → 1, 200 ms).
-3. 350 ms figurka leží na stole.
-4. 600 ms figurka se zvedne (rotace zpět) a přesune `ease-out` na cíl pádu (pod horou na své startovní místo).
+1. 600 ms kývání: vnitřní skupina −10° → +10° → −6° (magnet figurku odpuzuje).
+2. 650 ms odpadnutí: vnější skupina sjede na stůl (stejné x, y = 600) s `ease-in` (gravitace), vnitřní se otočí o 90° (figurka leží). Současně se u hory objeví značka magnetu (scale 0 → 1, 200 ms).
+3. 700 ms figurka leží na stole.
+4. 1000 ms figurka se zvedne (rotace zpět) a přesune `ease-out` na cíl pádu (pod horou na své startovní místo, na hoře 13 na barevné místo pro čekající).
 
-`@media (prefers-reduced-motion: reduce)`: všechna trvání 0, jen pád má 150 ms prolnutí. Žádná 3D rotace kostek.
+`@media (prefers-reduced-motion: reduce)`: všechna trvání animací 0, jen pád má 150 ms prolnutí (tempo ho nemění). Žádná 3D rotace kostek. Pauzy mezi tahy a před tahem počítače zůstávají, nic se při nich nehýbe.
 
 ---
 
@@ -569,7 +581,7 @@ Hlášky skládej tak, aby se jméno **nemuselo skloňovat ani rodově shodovat*
 | barevná kostka | „Bára: barevná kostka – modrá, lanovkou na vrchol!“ / „Bára: barevná kostka – černá! Zpět na horu 13.“ |
 | magnetický pád | „Bára: magnet odpuzuje! Pád na horu 1.“ / „… Začíná znovu pod horou.“ / „… 3 kola čeká.“ |
 | přehoz při přesném hodu | „Bára: na vrchol chybí 3, tentokrát nic.“ |
-| vyhazování | „Na hoře 9 není místo pro dva. Tonda začíná znovu.“ |
+| vyhazování | „Na hoře 9 není místo pro dva. Tonda začíná znovu.“ (i po pádu na horu 1 nebo 11) |
 | vrchol | „Bára je na vrcholu!“ |
 
 ### 1. Nastavení (`SetupScreen`)
@@ -579,12 +591,13 @@ Hlášky skládej tak, aby se jméno **nemuselo skloňovat ani rodově shodovat*
 - **Kdo hraje:** volby „Proti počítači“ / „Více lidí na jednom zařízení“, počet horolezců 2–4, řádky míst: barevná tečka (klepnutí = další volná barva), jméno (max. 12 znaků), Člověk/Počítač.
   - „Proti počítači“: místo 1 člověk „Hráč“, ostatní počítač s náhodnými jmény z `names.ts` (Jirka, Bára, Honza, Věra, Tonda, Marta, Pepa, Hana – bez opakování).
   - „Více lidí“: všichni lidé „Hráč 1“ až „Hráč n“.
-- **Pravidla hry:** přepínače z tabulky volitelných pravidel, každý s jednou větou vysvětlení a značkou „výklad“ tam, kde jde o výklad (červený kroužek, barevná kostka, přesný hod, šestka, vyhazování).
+- **Pravidla hry:** přepínače z tabulky volitelných pravidel, každý s jednou větou vysvětlení a značkou „výklad“ tam, kde jde o výklad (červený kroužek, barevná kostka, přesný hod, šestka, vyhazování). Přepínač vyhazování (v2.1) se jmenuje „Vyhazování – na hoře může stát jen jeden horolezec“.
+- **Statistiky (F3):** počet dohraných výprav, nejkratší výstup v kolech (se jménem) a výhry podle jména; „Smazat statistiky“ s potvrzením. Výprava se započítá jednou, ve chvíli, kdy je poprvé znám vítěz.
 - Tlačítko „Vyrazit na výstup“.
 
 ### 2. Hra
 
-- Hlavička: „Horolezec“ malým písmem, menu ☰ (Pravidla, Legenda, Nová hra s potvrzením, Rychlost počítače, Ukazovat, kde kdo spadl), přepínač tématu.
+- Hlavička: „Horolezec“ malým písmem, menu ☰ (Pravidla, Legenda, Nová hra s potvrzením, Tempo hry, Ukazovat, kde kdo spadl), přepínač tématu.
 - Proužek „Na tahu: Bára“ s barvou a číslem figurky. Když po člověku přijde jiný člověk, proužek na 1,2 s zvýrazni a tlačítko zní „Bára, hoď kostkou“.
 - Panel: kostka s čísly, podle potřeby barevná kostka, hlavní tlačítko „Hodit kostkou“, poslední hláška. Hlášky jdou i do `aria-live="polite"`.
 - „Deník výpravy“ (F2): rozbalovací seznam posledních 50 hlášek, nejnovější nahoře.
@@ -592,7 +605,7 @@ Hlášky skládej tak, aby se jméno **nemuselo skloňovat ani rodově shodovat*
 ### 3. Výsledek (`ResultScreen`, F3)
 
 - „Bára je na vrcholu!“, pořadí, u každého: hody, pády z magnetu, jízdy lanovkou, zákazy, počet kol.
-- **„Kde by kdo spadl“:** po konci hry odhal tajemství – u každého horolezce jeho 3 zrádné hory (odhalené plně, neodhalené obrysem) a kdo měl magnet otočený stejně. Tady smí UI číst plný stav.
+- **„Kde by kdo spadl“:** po konci hry odhal tajemství – u každého horolezce jeho 3 zrádné hory (odhalené plně, neodhalené obrysem) a kdo měl magnet otočený stejně. Tady smí UI číst plný stav. Ve fázi `won` (ostatní můžou hrát o další místa) se magnety ukážou až tlačítkem „Ukončit výpravu a ukázat magnety“, které výpravu ukončí (zmizí „Hrát o další místa“, uložená hra se smaže) – jinak by odhalení pokazilo hru o další místa.
 - Tlačítka: „Hrát o další místa“ (když lezou ještě aspoň dva), „Nová výprava“ (stejné nastavení, nový seed = nové magnety), „Změnit nastavení“.
 
 ### 4. Pravidla (`RulesScreen`)
@@ -605,14 +618,17 @@ Text z `texts.ts`, tabulka doslovných textů z plánu s výkladem (generovaná 
 >
 > **Hory s textem** fungují podle legendy. Na horu s červeným kroužkem se nesmí. Na horách 20 a 24 rozhoduje barevná kostka: černá vrací na horu 13, jiná barva veze lanovkou na vrchol.
 >
+> **Na hoře je místo jen pro jednoho.** Kdo přijde na obsazenou horu – hodem, po čárkované trase, posunem zpět i pádem –, pošle horolezce, který tam stál, zpět pod horu. Ten přijde i o čekání u lanovky a o zbývající kola stání. Pod horou, na hoře 13 a na vrcholu je místa dost. Vyhazování jde v nastavení vypnout.
+>
 > **Odkud hra je.** Horolezce vydala TOFA Semily v roce 1955 jako svislou magnetickou desku na stojánku s dřevěnými figurkami. Hráči si mezi partiemi figurky měnili, aby si nikdo nezapamatoval svá krizová místa. Čísla hor a texty jsou podle originálního plánu, ilustrace je nová. Část pravidel vykládáme, protože původní návod nemáme – přehled je v tabulce výkladu.
 
 ---
 
 ## Perzistence (`src/lib/storage.ts`)
 
-- Klíče: `horolezec.v2.settings` (poslední nastavení, pravidla, rychlost počítače, zobrazování značek), `horolezec.v2.theme`, `horolezec.v2.game` (celý `GameState` po každé dokončené akci), `horolezec.v2.stats` (od F3).
+- Klíče: `horolezec.v2.settings` (poslední nastavení, pravidla, tempo hry, zobrazování značek), `horolezec.v2.theme`, `horolezec.v2.game` (celý `GameState` po každé dokončené akci), `horolezec.v2.stats` (od F3: `{ schema: 2, games, wins: { jméno: počet }, shortest: { turns, name } | null }`).
 - Vše v `try/catch`, chyba čtení = jako by klíč nebyl. Pole `schema` a funkce `migrate()`. Nekompatibilní data nemaž potichu, přesuň je pod klíč s příponou `.backup`.
+- **Migrace v2.1:** nastavení má `schema: 3` a pole `tempo` (`slow` / `normal` / `fast`) místo `speed`. Nastavení ze schématu 2 (Fáze 2, `knockOut: false`) se při prvním načtení jednou převede: `knockOut` na nový výchozí stav (zapnuto), `speed` `normal` → `normal`, `fast` i `instant` → `fast`, a hned se uloží. Rozehraná hra (`GameState`, schéma 2) se nemigruje a hraje se dál se svými pravidly.
 - Uložená hra obsahuje i póly (nutné pro pokračování). U rodinné aplikace je to v pořádku.
 
 ---
@@ -662,7 +678,7 @@ Počítačoví hráči, 3D kostky, efektní pád na stůl, deník, legenda, bubl
 
 ### Implementuj
 
-1. Počítačoví hráči: `useGame` za ně po pauze podle rychlosti (Normálně / Rychle / Okamžitě) odešle `roll`. Během jejich tahu je vstup zablokovaný.
+1. Počítačoví hráči: `useGame` za ně po pauze podle rychlosti (Normálně / Rychle / Okamžitě) odešle `roll`. Během jejich tahu je vstup zablokovaný. (Od v2.1 místo rychlosti Tempo hry, viz Animace.)
 2. Plné nastavení: volby „Proti počítači“ a „Více lidí na jednom zařízení“, 2–4 místa, Člověk/Počítač, barvy, jména, přepínače všech volitelných pravidel se značkou „výklad“.
 3. Úplný `eventPlayer` podle tabulky časování: **magnetický pád na stůl**, jízda lanovkou s kabinkou, sjezd po černé, vyhazování, zrychlení klepnutím na desku, `prefers-reduced-motion`.
 4. 3D kostky (s čísly i barevná).
@@ -696,7 +712,7 @@ Výsledková obrazovka s odhalením magnetů, statistiky, PWA, zvuky, online.
 
 1. `ResultScreen` s pořadím, statistikami a sekcí „Kde by kdo spadl“, tlačítka „Hrát o další místa“, „Nová výprava“, „Změnit nastavení“.
 2. Statistiky v `localStorage`: počet her, výhry podle jména, nejkratší výstup v kolech. Zobrazit na úvodní obrazovce, smazání s potvrzením.
-3. PWA základ: `manifest.webmanifest`, ikona `public/icon.svg` (figurka na vrcholku), `theme-color`, `apple-mobile-web-app-capable`, `apple-touch-icon`. PNG ikony (180, 192, 512) jen pokud to jde bez nové závislosti, jinak se zastav a zeptej. **Bez service workeru.**
+3. PWA základ: `manifest.webmanifest`, ikona `public/icon.svg` (figurka na vrcholku), `theme-color`, `apple-mobile-web-app-capable`, `apple-touch-icon`. PNG ikony (180, 192, 512) jen pokud to jde bez nové závislosti, jinak se zastav a zeptej. **Bez service workeru.** (Splněno: PNG se jednorázově vyrenderovaly z `icon.svg` Chromiem prostředí, do projektu nepřibyla žádná závislost.)
 4. Doladění: kontrola na 380 a 768 px, viditelný focus, kontrasty, texty.
 5. `CLAUDE.md` podle šablony níže.
 

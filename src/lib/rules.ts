@@ -1,4 +1,4 @@
-// Volitelná pravidla. Výchozí hodnoty odpovídají výchozímu výkladu ve specifikaci.
+// Volitelná pravidla. Výchozí hodnoty odpovídají výchozímu výkladu ve specifikaci (v2.1: vyhazování zapnuté).
 
 export interface Rules {
   magnets: boolean;
@@ -11,5 +11,5 @@ export interface Rules {
 
 export const DEFAULT_RULES: Rules = {
   magnets: true, redRing: "zakaz", colorDie: "jinaNezCerna",
-  exactFinish: false, sixAgain: false, knockOut: false,
+  exactFinish: false, sixAgain: false, knockOut: true,
 };

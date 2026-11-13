@@ -1,10 +1,11 @@
 // Herní stav + přehrávání událostí + automatické tahy počítače.
-// UI dostává jen PublicView a zobrazovaný stav; plný stav (s póly) zná jen engine a úložiště.
+// UI dostává jen PublicView a zobrazovaný stav; plný stav (s póly) zná jen engine, úložiště
+// a výsledková obrazovka po konci hry (finalState).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { applyAction, createGame, toPublicView, type Action, type GameSetup, type GameState, type PublicView } from "../lib/engine";
-import { buildTimeline, displayFromView, type DisplayState } from "../lib/eventPlayer";
-import { saveGame, type Speed } from "../lib/storage";
+import { buildTimeline, displayFromView, scaled, TIMING, type DisplayState, type Tempo } from "../lib/eventPlayer";
+import { recordWin, saveGame } from "../lib/storage";
 
 /** Seed nové hry. Ve vývojovém režimu jde zadat parametrem ?seed=123. */
 function pickSeed(): number {
@@ -16,9 +17,6 @@ function pickSeed(): number {
   crypto.getRandomValues(buf);
   return buf[0];
 }
-
-/** Pauza před tahem počítače. */
-export const AI_PAUSE: Record<Speed, number> = { normal: 700, fast: 250, instant: 0 };
 
 const JOURNAL_MAX = 50;
 
@@ -34,6 +32,8 @@ export interface GameApi {
   journal: string[];            // nejnovější nahoře
   handover: Handover | null;    // po člověku přišel jiný člověk
   aiTurn: boolean;
+  /** Plný stav včetně pólů – jen když je znám vítěz (pro „Kde by kdo spadl“), jinak null. */
+  finalState: GameState | null;
   start: (setup: GameSetup) => void;
   resume: (state: GameState) => void;
   roll: () => void;
@@ -43,11 +43,11 @@ export interface GameApi {
 }
 
 interface Options {
-  speed: Speed;
+  tempo: Tempo;
   reduced: boolean;
 }
 
-export function useGame({ speed, reduced }: Options): GameApi {
+export function useGame({ tempo, reduced }: Options): GameApi {
   const [game, setGame] = useState<GameState | null>(null);
   const [display, setDisplay] = useState<DisplayState | null>(null);
   const [busy, setBusy] = useState(false);
@@ -61,10 +61,12 @@ export function useGame({ speed, reduced }: Options): GameApi {
   const finalizeRef = useRef<(() => void) | null>(null);
   const lastHumanRef = useRef<string | null>(null);
   const reducedRef = useRef(reduced);
+  const tempoRef = useRef(tempo);
 
   useEffect(() => {
     reducedRef.current = reduced;
-  }, [reduced]);
+    tempoRef.current = tempo;
+  }, [reduced, tempo]);
 
   const clearTimers = useCallback(() => {
     for (const t of timers.current) window.clearTimeout(t);
@@ -99,7 +101,7 @@ export function useGame({ speed, reduced }: Options): GameApi {
 
   const resume = useCallback((g: GameState) => load(g), [load]);
 
-  const act = useCallback((action: Action, instant: boolean) => {
+  const act = useCallback((action: Action) => {
     const g = gameRef.current;
     const d = displayRef.current;
     if (!g || !d || busyRef.current) return;
@@ -109,12 +111,17 @@ export function useGame({ speed, reduced }: Options): GameApi {
     gameRef.current = next;
     setGame(next);
     saveGame(next);
+    // Statistiky: výprava se započítá jednou, ve chvíli, kdy je poprvé znám vítěz.
+    if (g.phase === "playing" && !g.playOn && next.phase !== "playing") {
+      const winner = next.climbers.find((c) => c.finishedRank === 1);
+      if (winner) recordWin(winner.seat.name, winner.stats.turns);
+    }
     if (action.type === "roll" && actor.seat.kind === "human") lastHumanRef.current = actor.id;
 
     const view = toPublicView(next);
     const names = new Map<string, string>(view.climbers.map((c) => [c.id, c.seat.name]));
     const frames = events.length > 0
-      ? buildTimeline(d, events, view.climbers, (id) => names.get(id) ?? id, { reduced: reducedRef.current })
+      ? buildTimeline(d, events, view.climbers, (id) => names.get(id) ?? id, { reduced: reducedRef.current, tempo: tempoRef.current })
       : [];
     const last = frames.length > 0 ? frames[frames.length - 1].state : d;
 
@@ -152,8 +159,7 @@ export function useGame({ speed, reduced }: Options): GameApi {
       }
     };
 
-    if (instant || frames.length === 0) {
-      // Okamžitě: bez animací, rovnou konečný stav.
+    if (frames.length === 0) {
       displayRef.current = { ...last, fx: d.fx };
       finalize();
       return;
@@ -168,27 +174,30 @@ export function useGame({ speed, reduced }: Options): GameApi {
       else timers.current.push(window.setTimeout(() => show(f.state), t));
       t += f.duration;
     }
-    timers.current.push(window.setTimeout(finalize, t));
+    // Pauza mezi tahy: konečný stav chvíli drží, teprve pak je na tahu další.
+    timers.current.push(window.setTimeout(finalize, t + scaled(TIMING.between, tempoRef.current)));
   }, [clearTimers, show]);
 
   const view = useMemo(() => (game ? toPublicView(game) : null), [game]);
   const current = view ? view.climbers[view.current] : null;
   const aiTurn = !!view && view.phase === "playing" && current?.seat.kind === "ai";
 
-  // Počítač nemá co rozhodovat: po pauze za něj odešleme hod.
+  const finalState = game && game.phase !== "playing" ? game : null;
+
+  // Počítač nemá co rozhodovat: po pauze (1400 ms × tempo) za něj odešleme hod.
   useEffect(() => {
     if (!aiTurn || busy) return;
-    const t = window.setTimeout(() => act({ type: "roll" }, speed === "instant"), AI_PAUSE[speed]);
+    const t = window.setTimeout(() => act({ type: "roll" }), scaled(TIMING.aiPause, tempo));
     return () => window.clearTimeout(t);
-  }, [aiTurn, busy, speed, act, game]);
+  }, [aiTurn, busy, tempo, act, game]);
 
   const roll = useCallback(() => {
     const g = gameRef.current;
     if (!g || g.climbers[g.current].seat.kind !== "human") return;
-    act({ type: "roll" }, false);
+    act({ type: "roll" });
   }, [act]);
 
-  const playOn = useCallback(() => act({ type: "continue" }, false), [act]);
+  const playOn = useCallback(() => act({ type: "continue" }), [act]);
 
   const finishPlayback = useCallback(() => {
     finalizeRef.current?.();
@@ -208,5 +217,5 @@ export function useGame({ speed, reduced }: Options): GameApi {
     setHandover(null);
   }, [clearTimers]);
 
-  return { view, display, busy, journal, handover, aiTurn, start, resume, roll, playOn, stop, finishPlayback };
+  return { view, display, busy, journal, handover, aiTurn, finalState, start, resume, roll, playOn, stop, finishPlayback };
 }

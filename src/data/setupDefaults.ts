@@ -22,12 +22,12 @@ export function seatsForMode(mode: PlayMode): SeatSetup[] {
 
 export function defaultSettings(): Settings {
   return {
-    schema: 2,
+    schema: 3,
     mode: "ai",
     count: 2,
     seats: seatsForMode("ai"),
     rules: { ...DEFAULT_RULES },
-    speed: "normal",
+    tempo: "normal",
     showMarks: true,
   };
 }

@@ -16,6 +16,7 @@ export type IconName =
   | "hut"
   | "redCross"
   | "flag"
+  | "noEntry"
   | "menu"
   | "info"
   | "close";
@@ -103,6 +104,7 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="M5.5 4 H18 L15 8 L18 12 H5.5" fill="currentColor" />
     </>
   ),
+  noEntry: <circle cx="12" cy="12" r="7.5" strokeWidth="4" />,
   menu: (
     <>
       <path d="M4 6.5 H20" />

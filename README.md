@@ -4,7 +4,9 @@ Digitální verze české magnetické deskové hry **Horolezec** (TOFA Semily, 1
 kostkou se stoupá po 27 očíslovaných horách na vrchol, na šesti horách může figurku odpudit magnet.
 
 Čísla hor a texty jsou podle originálního plánu, ilustrace desky je vlastní. Zadání a výklad pravidel
-jsou v [horolezec-spec.md](horolezec-spec.md).
+jsou v [horolezec-spec.md](horolezec-spec.md), pokyny pro Claude Code v [CLAUDE.md](CLAUDE.md).
+
+Na iPhonu jde hra přidat na plochu (Safari → Sdílet → Přidat na plochu) a spustí se bez lišty prohlížeče.
 
 ## Vývoj
 

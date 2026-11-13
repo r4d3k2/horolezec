@@ -1,9 +1,10 @@
-// localStorage: nastavení, téma, rozehraná hra (statistiky od F3).
+// localStorage: nastavení, téma, rozehraná hra a statistiky.
 // Vše v try/catch (privátní režim Safari): chyba čtení = jako by klíč nebyl.
 // Nekompatibilní data se nemažou potichu, ale přesunou pod klíč s příponou ".backup".
 
 import { CLIMBER_COLORS, type ClimberColor } from "../data/board";
 import type { GameState, SeatSetup } from "./engine";
+import type { Tempo } from "./eventPlayer";
 import { DEFAULT_RULES, type Rules } from "./rules";
 
 export const KEYS = {
@@ -16,17 +17,28 @@ export const KEYS = {
 export type ThemeId = "hory-den" | "retro-1955" | "hory-noc";
 export const THEMES: ThemeId[] = ["hory-den", "retro-1955", "hory-noc"];
 
-export type Speed = "normal" | "fast" | "instant";
 export type PlayMode = "ai" | "hotseat";
 
+/**
+ * Nastavení. Schéma 3 (v2.1): „Rychlost počítače“ nahradilo „Tempo hry“ a vyhazování je výchozí.
+ * Schéma 2 (Fáze 2) se při načtení jednou převede: knockOut → výchozí (zapnuto), speed → tempo.
+ */
 export interface Settings {
-  schema: 2;
+  schema: 3;
   mode: PlayMode;
   count: number;
   seats: SeatSetup[];       // vždy 4 místa, aktivní je prvních `count`
   rules: Rules;
-  speed: Speed;
+  tempo: Tempo;
   showMarks: boolean;
+}
+
+/** Statistiky dohraných výprav (počítá se, jakmile je znám vítěz). */
+export interface Stats {
+  schema: 2;
+  games: number;
+  wins: Record<string, number>;                       // výhry podle jména
+  shortest: { turns: number; name: string } | null;   // nejkratší výstup vítěze v kolech
 }
 
 /** Minimální rozhraní localStorage (modul jde typově zkontrolovat i bez DOM typů). */
@@ -99,28 +111,39 @@ function migrateRules(v: unknown): Rules {
   };
 }
 
+const isTempo = (v: unknown): v is Tempo => v === "slow" || v === "normal" || v === "fast";
+
 /**
  * Převod uložených dat na aktuální schéma. Vrací null, když data nejdou použít.
- * Schéma 2 je první verze aplikace; starší neexistují.
+ * Nastavení: schéma 2 → 3 (jednorázově vyhazování na nový výchozí stav, rychlost → tempo).
+ * Rozehraná hra: schéma 2, hra si nechává svá pravidla. Statistiky: schéma 2.
  */
 export function migrate(key: string, data: unknown): unknown | null {
-  if (!isObj(data) || data.schema !== 2) return null;
+  if (!isObj(data)) return null;
   if (key === KEYS.settings) {
+    if (data.schema !== 2 && data.schema !== 3) return null;
     const seats = Array.isArray(data.seats) ? data.seats.filter(isSeat).slice(0, 4) : [];
     if (seats.length !== 4) return null;
     const count = typeof data.count === "number" && data.count >= 2 && data.count <= 4 ? data.count : 2;
-    const speed: Speed = data.speed === "fast" || data.speed === "instant" ? data.speed : "normal";
+    const rules = migrateRules(data.rules);
+    let tempo: Tempo = isTempo(data.tempo) ? data.tempo : "normal";
+    if (data.schema === 2) {
+      // Fáze 2 měla vyhazování vypnuté a „Rychlost počítače“ (normal / fast / instant).
+      rules.knockOut = DEFAULT_RULES.knockOut;
+      tempo = data.speed === "fast" || data.speed === "instant" ? "fast" : "normal";
+    }
     const settings: Settings = {
-      schema: 2,
+      schema: 3,
       mode: data.mode === "hotseat" ? "hotseat" : "ai",
       count,
       seats,
-      rules: migrateRules(data.rules),
-      speed,
+      rules,
+      tempo,
       showMarks: data.showMarks !== false,
     };
     return settings;
   }
+  if (data.schema !== 2) return null;
   if (key === KEYS.game) {
     const ok =
       typeof data.seed === "number" &&
@@ -134,6 +157,19 @@ export function migrate(key: string, data: unknown): unknown | null {
       isObj(data.fieldPoles) &&
       isObj(data.rules);
     return ok ? data : null;
+  }
+  if (key === KEYS.stats) {
+    if (typeof data.games !== "number" || data.games < 0 || !isObj(data.wins)) return null;
+    const wins: Record<string, number> = {};
+    for (const [name, n] of Object.entries(data.wins)) {
+      if (typeof n === "number" && n > 0) wins[name] = n;
+    }
+    const sh = data.shortest;
+    const shortest = isObj(sh) && typeof sh.turns === "number" && typeof sh.name === "string"
+      ? { turns: sh.turns, name: sh.name }
+      : null;
+    const stats: Stats = { schema: 2, games: Math.floor(data.games), wins, shortest };
+    return stats;
   }
   return data;
 }
@@ -151,7 +187,11 @@ function load<T>(key: string): T | null {
 }
 
 export function loadSettings(): Settings | null {
-  return load<Settings>(KEYS.settings);
+  const raw = parse(readRaw(KEYS.settings));
+  const s = load<Settings>(KEYS.settings);
+  // Převedené nastavení ze schématu 2 hned uložit, aby se migrace provedla jen jednou.
+  if (s && isObj(raw) && raw.schema !== 3) saveSettings(s);
+  return s;
 }
 
 export function saveSettings(s: Settings): void {
@@ -184,4 +224,31 @@ export function saveGame(g: GameState): void {
 
 export function clearGame(): void {
   remove(KEYS.game);
+}
+
+// --- Statistiky ------------------------------------------------------------
+
+export function emptyStats(): Stats {
+  return { schema: 2, games: 0, wins: {}, shortest: null };
+}
+
+export function loadStats(): Stats {
+  return load<Stats>(KEYS.stats) ?? emptyStats();
+}
+
+/** Započítá dohranou výpravu (volá se jednou, když je poprvé znám vítěz). */
+export function recordWin(name: string, turns: number): Stats {
+  const st = loadStats();
+  const next: Stats = {
+    schema: 2,
+    games: st.games + 1,
+    wins: { ...st.wins, [name]: (st.wins[name] ?? 0) + 1 },
+    shortest: st.shortest === null || turns < st.shortest.turns ? { turns, name } : st.shortest,
+  };
+  write(KEYS.stats, JSON.stringify(next));
+  return next;
+}
+
+export function clearStats(): void {
+  remove(KEYS.stats);
 }
