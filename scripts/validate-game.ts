@@ -3,7 +3,7 @@
 
 import { BOARD, CLIMBER_COLORS, type BoardDef, type FieldEffect } from "../src/data/board";
 import {
-  applyAction, createGame, fallFields, legalActions, replayPositions, toPublicView,
+  applyAction, createGame, fallFields, isSharedField, legalActions, replayPositions, toPublicView,
   type GameEvent, type GameSetup, type GameState,
 } from "../src/lib/engine";
 import { Rng } from "../src/lib/rng";
@@ -251,6 +251,16 @@ function checkInvariants(s: GameState, before: GameState, events: GameEvent[], b
     if (c.atStation && c.pos !== 20) return `${label}: ${c.id} čeká u lanovky mimo horu 20 (${c.pos})`;
     if (c.skipTurns < 0) return `${label}: ${c.id} má záporné čekání`;
   }
+  if (s.rules.knockOut) {
+    // Vyhazování: na hoře stojí nejvýš jeden horolezec (mimo start, horu 13 a vrchol).
+    const seen = new Map<number, string>();
+    for (const c of s.climbers) {
+      if (isSharedField(c.pos, board)) continue;
+      const other = seen.get(c.pos);
+      if (other) return `${label}: ${other} a ${c.id} stojí oba na hoře ${c.pos}`;
+      seen.set(c.pos, c.id);
+    }
+  }
   if (s.rules.magnets) {
     const poles = Object.values(s.fieldPoles);
     if (poles.length !== 6 || poles.filter((p) => p === "N").length !== 3) return `${label}: póly hor nejsou 3 + 3`;
@@ -345,7 +355,7 @@ function validateDeterminism(board: BoardDef): void {
   const seeds = [1, 42, 12345, 987654321, 4294967295];
   const variants: Rules[] = [
     DEFAULT_RULES,
-    { magnets: true, redRing: "bezUcinku", colorDie: "vlastniBarva", exactFinish: true, sixAgain: true, knockOut: true },
+    { magnets: true, redRing: "bezUcinku", colorDie: "vlastniBarva", exactFinish: true, sixAgain: true, knockOut: false },
   ];
   for (const seed of seeds) {
     for (const rules of variants) {
@@ -375,6 +385,8 @@ interface Balance {
   pctReturn: number;
   pctRide: number;
   pctBlocked: number;
+  knockPerGame: number;
+  pctKnock: number;
 }
 
 function percentile(sorted: number[], p: number): number {
@@ -390,12 +402,15 @@ function simulate(n: number, rules: Rules, games: number, seed: number, board: B
   let withReturn = 0;
   let byRide = 0;
   let withBlocked = 0;
+  let knocks = 0;
+  let withKnock = 0;
   const setup = setupFor(n, rules);
   for (let g = 0; g < games; g++) {
     let s = createGame(setup, Math.floor(rng.next() * 2 ** 32), board);
     let gFalls = 0;
     let gReturn = false;
     let gBlocked = false;
+    let gKnocks = 0;
     let ride = false;
     let guard = 0;
     while (s.phase === "playing" && guard++ < 100000) {
@@ -408,6 +423,8 @@ function simulate(n: number, rules: Rules, games: number, seed: number, board: B
           if (e.to === 0) gReturn = true;
         } else if (e.type === "blocked") {
           gBlocked = true;
+        } else if (e.type === "knockOut") {
+          gKnocks++;
         } else if (e.type === "summit" && e.rank === 1) {
           const prev = ev[i - 1];
           ride = prev?.type === "move" && prev.how === "lanovka";
@@ -422,6 +439,8 @@ function simulate(n: number, rules: Rules, games: number, seed: number, board: B
     if (gReturn) withReturn++;
     if (ride) byRide++;
     if (gBlocked) withBlocked++;
+    knocks += gKnocks;
+    if (gKnocks > 0) withKnock++;
   }
   rounds.sort((a, b) => a - b);
   return {
@@ -436,6 +455,8 @@ function simulate(n: number, rules: Rules, games: number, seed: number, board: B
     pctReturn: (100 * withReturn) / games,
     pctRide: (100 * byRide) / games,
     pctBlocked: (100 * withBlocked) / games,
+    knockPerGame: knocks / games,
+    pctKnock: (100 * withKnock) / games,
   };
 }
 
@@ -451,6 +472,7 @@ function balanceRow(label: string, b: Balance): string {
     fmt(b.fallsPerGame, 2).padStart(7),
     `${fmt(b.pctFall)} %`.padStart(9), `${fmt(b.pctReturn)} %`.padStart(9),
     `${fmt(b.pctRide)} %`.padStart(9), `${fmt(b.pctBlocked)} %`.padStart(9),
+    fmt(b.knockPerGame, 2).padStart(7), `${fmt(b.pctKnock)} %`.padStart(9),
   ].join(" ");
 }
 
@@ -461,6 +483,7 @@ function validateBalance(board: BoardDef): void {
   const header = [
     "varianta".padEnd(26), " p10", " p50", " p90", " p99", "  max",
     "  pády", "  s pádem", "pod horu", " lanovka", "   zákaz",
+    "vyhoz.", " s vyhoz.",
   ].join(" ");
   console.log("");
   console.log(`  Vyvážení (${GAMES} her na řádek, seed ${SEED}, kola = tahy vítěze včetně přeskočených)`);
@@ -480,23 +503,25 @@ function validateBalance(board: BoardDef): void {
     ["2 – jen vlastní barva", { colorDie: "vlastniBarva" }],
     ["2 – přesný hod", { exactFinish: true }],
     ["2 – šestka znovu", { sixAgain: true }],
-    ["2 – vyhazování", { knockOut: true }],
+    ["2 – bez vyhazování", { knockOut: false }],
   ];
   for (const [label, patch] of variants) {
     const b = simulate(2, { ...DEFAULT_RULES, ...patch }, GAMES, SEED, board);
     console.log("  " + balanceRow(label, b));
   }
   console.log("");
-  console.log("  Reference (Python): 2 horolezci p10 7, p50 13, p90 28, p99 48, max 93; 3,18 pádu; 88,0 % s pádem;");
-  console.log("  58,5 % pod horu; 72,3 % lanovkou; 93,5 % se zákazem. 3 horolezci p50 11, p90 21. 4 horolezci p50 10, p90 18.");
+  console.log("  Reference (Python, výchozí pravidla v2.1): 2 horolezci p50 15, p90 32, p99 55, max 139; 88 % s pádem;");
+  console.log("  60 % pod horu; 72 % lanovkou; 94 % se zákazem; 64 % s vyhozením (1,2 na hru).");
+  console.log("  3 horolezci p50 13, 3,8 vyhození na hru. 4 horolezci p50 12, 7,6 vyhození na hru.");
 
-  check(two.p50 >= 10 && two.p50 <= 16, S, `p50 = ${two.p50}, má být 10–16`);
-  check(two.p90 <= 34, S, `p90 = ${two.p90}, má být ≤ 34`);
+  check(two.p50 >= 11 && two.p50 <= 18, S, `p50 = ${two.p50}, má být 11–18`);
+  check(two.p90 <= 38, S, `p90 = ${two.p90}, má být ≤ 38`);
   check(two.max < 300, S, `max = ${two.max}, má být < 300`);
   check(two.pctFall >= 80, S, `hry s pádem ${fmt(two.pctFall)} %, má být ≥ 80 %`);
-  check(two.pctReturn >= 45 && two.pctReturn <= 72, S, `návrat pod horu ${fmt(two.pctReturn)} %, má být 45–72 %`);
+  check(two.pctReturn >= 45 && two.pctReturn <= 75, S, `návrat pod horu ${fmt(two.pctReturn)} %, má být 45–75 %`);
   check(two.pctRide >= 60 && two.pctRide <= 85, S, `výhra lanovkou ${fmt(two.pctRide)} %, má být 60–85 %`);
   check(two.pctBlocked >= 85, S, `hry se zákazem ${fmt(two.pctBlocked)} %, má být ≥ 85 %`);
+  check(two.pctKnock >= 50 && two.pctKnock <= 80, S, `hry s vyhozením ${fmt(two.pctKnock)} %, má být 50–80 %`);
 }
 
 // ---------------------------------------------------------------------------

@@ -3,8 +3,9 @@
 
 import type { DieColor, FieldDef } from "./board";
 import type { GameEvent } from "../lib/engine";
+import type { Tempo } from "../lib/eventPlayer";
 import type { Rules } from "../lib/rules";
-import type { Speed, ThemeId } from "../lib/storage";
+import type { ThemeId } from "../lib/storage";
 
 export const COLOR_NAMES: Record<DieColor, string> = {
   red: "červená",
@@ -42,13 +43,41 @@ export const UI = {
   close: "Zavřít",
   rules: "Pravidla",
   legend: "Legenda",
-  speed: "Rychlost počítače",
+  tempo: "Tempo hry",
+  tempoHint: "Platí pro všechny animace i pauzy. Klepnutí na desku dokončí právě běžící pohyb.",
   showMarks: "Ukazovat, kde kdo spadl",
   journal: "Deník výpravy",
   journalEmpty: "Zatím se nic nestalo.",
   inApp: "V aplikaci:",
   hint: "Hoď kostkou a vystoupej o tolik hor.",
   theme: "Téma",
+  // výsledky
+  results: "Výsledky výpravy",
+  ranking: "Pořadí",
+  stillClimbing: "ještě leze",
+  newExpedition: "Nová výprava",
+  changeSettings: "Změnit nastavení",
+  whereFall: "Kde by kdo spadl",
+  whereFallHint: "Plný kroužek: tady horolezec spadl. Obrys: tady by spadl, kdyby na horu přišel.",
+  whereFallHidden: "Kde by kdo spadl, se ukáže po konci hry – kdo ještě leze, ať se nedívá.",
+  whereFallReveal: "Ukončit výpravu a ukázat magnety",
+  magnetsOff: "Magnety byly vypnuté, nikdo padat nemohl.",
+  samePole: "Stejně otočený magnet",
+  samePoleNobody: "nikdo jiný",
+  polesNote: "V originále si hráči mezi partiemi měnili figurky. Tady se magnety losují znovu při každé nové výpravě.",
+  statRolls: "hody",
+  statFalls: "pády z magnetu",
+  statRides: "jízdy lanovkou",
+  statBlocked: "zákazy",
+  // statistiky
+  stats: "Statistiky",
+  statsGames: "Dohrané výpravy",
+  statsShortest: "Nejkratší výstup",
+  statsWins: "Výhry",
+  statsClear: "Smazat statistiky",
+  statsClearConfirm: "Opravdu smazat statistiky? Počty výher i nejkratší výstup zmizí.",
+  statsClearYes: "Smazat",
+  statsClearNo: "Nechat",
 };
 
 export const THEME_LABELS: Record<ThemeId, { icon: string; name: string }> = {
@@ -57,10 +86,10 @@ export const THEME_LABELS: Record<ThemeId, { icon: string; name: string }> = {
   "hory-noc": { icon: "🌙", name: "Bivak v noci" },
 };
 
-export const SPEED_LABELS: Record<Speed, string> = {
+export const TEMPO_LABELS: Record<Tempo, string> = {
+  slow: "Pomalu",
   normal: "Normálně",
   fast: "Rychle",
-  instant: "Okamžitě",
 };
 
 /** Přepínače volitelných pravidel: jedna věta vysvětlení, značka „výklad“ tam, kde jde o výklad. */
@@ -70,13 +99,22 @@ export const RULE_TOGGLES: { key: keyof Rules; label: string; text: string; inte
   { key: "colorDie", label: "Na vrchol jen vlastní barva", text: "Lanovka veze na vrchol jen při vlastní barvě. Vypnuto = veze každá barva kromě černé.", interpretation: true },
   { key: "exactFinish", label: "Přesný hod na vrchol", text: "Na vrchol se dá dojít jen přesným hodem.", interpretation: true },
   { key: "sixAgain", label: "Šestka hází znovu", text: "Po šestce hod navíc, když tah skončil normálně.", interpretation: true },
-  { key: "knockOut", label: "Vyhazování", text: "Kdo skončí na hoře s jiným horolezcem, ten druhý začíná znovu pod horou (mimo horu 13 a vrchol).", interpretation: true },
+  { key: "knockOut", label: "Vyhazování – na hoře může stát jen jeden horolezec", text: "Kdo přijde na obsazenou horu, pošle horolezce, který tam stál, zpět pod horu (ten přijde i o čekání). Start, hora 13 a vrchol unesou víc horolezců.", interpretation: true },
 ];
 
+/** Číslovka se správným tvarem podstatného jména: 1 kolo, 2–4 kola, 5+ kol. */
+export function plural(n: number, one: string, few: string, many: string): string {
+  if (n === 1) return `${n} ${one}`;
+  if (n >= 2 && n <= 4) return `${n} ${few}`;
+  return `${n} ${many}`;
+}
+
 export function kola(n: number): string {
-  if (n === 1) return "1 kolo";
-  if (n >= 2 && n <= 4) return `${n} kola`;
-  return `${n} kol`;
+  return plural(n, "kolo", "kola", "kol");
+}
+
+export function vyhry(n: number): string {
+  return plural(n, "výhra", "výhry", "výher");
 }
 
 /** Výklad hory v aplikaci podle zvolených pravidel. */
@@ -128,6 +166,10 @@ export const RULES_INTRO: { title: string; text: string }[] = [
     text: "fungují podle legendy. Na horu s červeným kroužkem se nesmí. Na horách 20 a 24 rozhoduje barevná kostka: černá vrací na horu 13, jiná barva veze lanovkou na vrchol.",
   },
   {
+    title: "Na hoře je místo jen pro jednoho.",
+    text: "Kdo přijde na obsazenou horu – hodem, po čárkované trase, posunem zpět i pádem –, pošle horolezce, který tam stál, zpět pod horu. Ten přijde i o čekání u lanovky a o zbývající kola stání. Pod horou, na hoře 13 a na vrcholu je místa dost. Vyhazování jde v nastavení vypnout.",
+  },
+  {
     title: "Odkud hra je.",
     text: "Horolezce vydala TOFA Semily v roce 1955 jako svislou magnetickou desku na stojánku s dřevěnými figurkami. Hráči si mezi partiemi figurky měnili, aby si nikdo nezapamatoval svá krizová místa. Čísla hor a texty jsou podle originálního plánu, ilustrace je nová. Část pravidel vykládáme, protože původní návod nemáme – přehled je v tabulce výkladu.",
   },
@@ -148,7 +190,7 @@ export const INTERPRETATION_TABLE: { question: string; reading: string; why: str
   { question: "Zkouška magnetu po přesunu", reading: "ano, na každé hoře, kam figurka dorazí (i po „1 zpět“, černé na kostce, pádu na horu 13)", why: "figurka se fyzicky pokládá na horu", alternative: "—" },
   { question: "Přesný hod na vrchol", reading: "ne", why: "neznámé", alternative: "přesný hod" },
   { question: "Šestka hází znovu", reading: "ne", why: "neznámé", alternative: "šestka znovu" },
-  { question: "Vyhazování jako v Člověče", reading: "ne", why: "hra je popsaná jako „variace Člověče“, pravidlo ale neznáme", alternative: "vyhazování" },
+  { question: "Vyhazování jako v Člověče", reading: "ano: na hoře může stát jen jeden horolezec, kdo přijde na obsazenou horu, pošle druhého zpět pod horu (mimo start, horu 13 a vrchol)", why: "hra je popsaná jako variace Člověče, nezlob se a hora 13 i vrchol mají místa navíc – to dává smysl, jen když hora normálně unese jednu figurku", alternative: "bez vyhazování" },
 ];
 
 /** Jméno počítačového ani lidského hráče se neskloňuje. */

@@ -1,4 +1,4 @@
-// Přepínání obrazovek: nastavení → hra (legenda, deska, panel, menu, pravidla, okno vítěze).
+// Přepínání obrazovek: nastavení → hra (legenda, deska, panel, menu, pravidla) → výsledky.
 
 import { useEffect, useState } from "react";
 import { Board } from "./components/Board";
@@ -7,20 +7,21 @@ import { Icon } from "./components/Icon";
 import { Journal } from "./components/Journal";
 import { Legend } from "./components/Legend";
 import { Pill } from "./components/Pill";
+import { ResultScreen } from "./components/ResultScreen";
 import { RulesScreen } from "./components/RulesScreen";
 import { SetupScreen } from "./components/SetupScreen";
 import { ThemeSwitcher } from "./components/ThemeSwitcher";
 import { Toggle } from "./components/Toggle";
 import { TurnPanel, TurnStrip } from "./components/TurnPanel";
-import { WinnerDialog } from "./components/WinnerDialog";
 import { defaultSettings } from "./data/setupDefaults";
-import { SPEED_LABELS, UI } from "./data/texts";
+import { TEMPO_LABELS, UI } from "./data/texts";
 import { useGame } from "./hooks/useGame";
 import { useReducedMotion } from "./hooks/useReducedMotion";
 import type { GameSetup } from "./lib/engine";
+import { tempoCssVars, TEMPOS } from "./lib/eventPlayer";
 import {
   clearGame, loadGame, loadSettings, loadTheme, saveSettings, saveTheme,
-  type Settings, type Speed, type ThemeId,
+  type Settings, type ThemeId,
 } from "./lib/storage";
 
 export default function App() {
@@ -33,11 +34,22 @@ export default function App() {
   const [legendOpen, setLegendOpen] = useState(false);
   const [bubble, setBubble] = useState<number | null>(null);
   const reduced = useReducedMotion();
-  const game = useGame({ speed: settings.speed, reduced });
+  const game = useGame({ tempo: settings.tempo, reduced });
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
+    const root = document.documentElement;
+    root.dataset.theme = theme;
+    // Barva lišty systému (PWA, Safari) podle pozadí tématu.
+    const bg = getComputedStyle(root).getPropertyValue("--bg").trim();
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta && bg) meta.setAttribute("content", bg);
   }, [theme]);
+
+  // Délky animací, které běží jen v CSS (kostka, pulz kroužku, značky, vlajka), podle Tempa hry.
+  useEffect(() => {
+    const root = document.documentElement;
+    for (const [name, value] of Object.entries(tempoCssVars(settings.tempo))) root.style.setProperty(name, value);
+  }, [settings.tempo]);
 
   const changeTheme = (t: ThemeId) => {
     setTheme(t);
@@ -74,6 +86,20 @@ export default function App() {
     game.stop();
   };
 
+  /** Nová výprava: stejní horolezci a pravidla, nový seed = nové magnety. */
+  const newExpedition = () => {
+    const v = game.view;
+    if (!v) return;
+    setBubble(null);
+    game.start({ seats: v.climbers.map((c) => ({ ...c.seat })), rules: { ...v.rules } });
+  };
+
+  /** Výprava ukončená před hrou o další místa (kvůli odhalení magnetů): uloženou hru zahodit. */
+  const endEarly = () => {
+    clearGame();
+    setHasSaved(false);
+  };
+
   const header = (inGame: boolean) => (
     <header className="w-full max-w-[1280px] flex items-center justify-between gap-2 px-3 h-14 shrink-0">
       {inGame ? <span className="font-display text-[22px] text-ink">{UI.title}</span> : <span />}
@@ -96,7 +122,7 @@ export default function App() {
 
   if (!game.view || !game.display) {
     return (
-      <div className="min-h-svh flex flex-col items-center">
+      <div className="safe-area min-h-svh flex flex-col items-center">
         {header(false)}
         <SetupScreen
           key={hasSaved ? "saved" : "fresh"}
@@ -122,7 +148,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-svh flex flex-col items-center">
+    <div className="safe-area min-h-svh flex flex-col items-center">
       <div className="relative w-full flex justify-center">
         {header(true)}
         {menuOpen ? (
@@ -139,13 +165,15 @@ export default function App() {
                 {UI.newGame}
               </button>
               <div className="border-t border-line mt-1 pt-2 px-2 flex flex-col gap-1.5">
-                <span className="text-sm text-ink-soft">{UI.speed}</span>
+                <span className="text-sm text-ink-soft">{UI.tempo}</span>
                 <Pill
-                  label={UI.speed}
-                  value={settings.speed}
-                  options={(["normal", "fast", "instant"] as Speed[]).map((s) => ({ value: s, label: SPEED_LABELS[s] }))}
-                  onChange={(s) => updateSettings({ speed: s })}
+                  label={UI.tempo}
+                  value={settings.tempo}
+                  options={TEMPOS.map((t) => ({ value: t, label: TEMPO_LABELS[t] }))}
+                  onChange={(t) => updateSettings({ tempo: t })}
+                  full
                 />
+                <span className="text-xs text-ink-muted leading-snug">{UI.tempoHint}</span>
               </div>
               <div className="mt-1">
                 <Toggle checked={settings.showMarks} onChange={(v) => updateSettings({ showMarks: v })} label={UI.showMarks} />
@@ -183,10 +211,20 @@ export default function App() {
         </aside>
       </main>
 
-      {finished ? <WinnerDialog view={view} onPlayOn={game.playOn} onNewGame={toSetup} /> : null}
+      {finished ? (
+        <ResultScreen
+          key={`${view.seed}-${view.phase}`}
+          view={view}
+          finalState={game.finalState}
+          onPlayOn={game.playOn}
+          onNewExpedition={newExpedition}
+          onChangeSettings={toSetup}
+          onEndEarly={endEarly}
+        />
+      ) : null}
 
       {legendOpen ? (
-        <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center backdrop" onClick={() => setLegendOpen(false)}>
+        <div className="safe-area fixed inset-0 z-40 flex items-end sm:items-center justify-center backdrop" onClick={() => setLegendOpen(false)}>
           <div
             role="dialog"
             aria-modal="true"

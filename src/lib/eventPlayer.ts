@@ -5,9 +5,14 @@
 import { BOARD, type BoardDef, type DieColor } from "../data/board";
 import { narrate, type NameOf } from "../data/texts";
 import type { GameEvent, PublicClimber, PublicView } from "./engine";
-import { fieldCenter, findRoute, layoutTokens, routePoints, type XY } from "./geometry";
+import { bezier, fieldCenter, findRoute, layoutTokens, type XY } from "./geometry";
 
-export type TokenFx = "none" | "hop" | "sway" | "wobble" | "magnetSway" | "tip" | "lying" | "rise";
+export type TokenFx = "none" | "hop" | "step" | "sway" | "wobble" | "magnetSway" | "tip" | "lying" | "rise";
+
+/** Tempo hry: násobí všechny animace i pauzy (Pomalu ×1,4 / Normálně ×1 / Rychle ×0,5). */
+export type Tempo = "slow" | "normal" | "fast";
+export const TEMPOS: Tempo[] = ["slow", "normal", "fast"];
+export const TEMPO_FACTOR: Record<Tempo, number> = { slow: 1.4, normal: 1, fast: 0.5 };
 
 export interface TokenFxState {
   kind: TokenFx;
@@ -45,35 +50,88 @@ export interface Frame {
 
 export interface TimelineOptions {
   reduced?: boolean;                                // prefers-reduced-motion: vše 0 ms, jen pád 150 ms prolnutí
+  tempo?: Tempo;
   board?: BoardDef;
 }
 
 /** Stůl pod deskou: sem figurka spadne. */
 export const TABLE_Y = 600;
 
+/**
+ * Časování v tempu Normálně (ms), pomalé jako u deskové hry. Tempo hry násobí všechny hodnoty
+ * kromě prolnutí při omezení pohybu.
+ */
 export const TIMING = {
-  roll: 700,
-  stepMax: 200,
-  stepTotalMax: 1200,
-  blocked: 450,
-  posun: 800,
-  lanovka: 1100,
-  zpet: 300,
-  cernaSway: 250,
-  cernaSlide: 800,
-  fallSway: 350,
-  fallDrop: 450,
-  fallLie: 350,
-  fallRise: 600,
-  knockDrop: 400,
-  knockLie: 250,
-  knockRise: 550,
-  info: 400,
+  roll: 900,            // hod kostkou (s čísly i barevnou)
+  rollShow: 400,        // výsledek kostky zůstane vidět, než se figurka pohne
+  step: 420,            // jedna hora s poskokem (figurka se zvedne asi o 12 jednotek), celkem bez stropu
+  land: 450,            // pauza po příchodu na horu, než se projeví její účinek
+  posun: 1400,          // 7 → 11 po čárkované trase
+  lanovka: 2000,        // lanovkou na vrchol
+  zpet: 600,            // 19 → 18
+  cernaSway: 400,       // černá na kostce: kývnutí
+  cernaSlide: 1300,     // … a sjezd na horu 13
+  fallSway: 600,        // magnetický pád: kývání
+  fallDrop: 650,        // … odpadnutí na stůl
+  fallLie: 700,         // … ležení na stole
+  fallRise: 1000,       // … zvednutí a návrat na cíl pádu
+  blocked: 900,         // odskok od červeného kroužku
+  knockDrop: 500,       // vyhazování (celkem 1600): oběť spadne na stůl,
+  knockLie: 400,        // … leží
+  knockRise: 700,       // … a jde na své startovní místo
+  summit: 1400,         // vrchol: poskok a vlajka
+  summitHop: 700,
+  info: 400,            // čekat, stojí, bez šestky, přehoz
   stationEnter: 250,
   extraRoll: 300,
-  summit: 800,
-  reducedFade: 150,
+  markPop: 200,         // značka magnetu naskočí
+  badgePop: 250,
+  flash: 1200,          // zvýraznění proužku „Na tahu“ při předání zařízení
+  aiPause: 1400,        // pauza před tahem počítače
+  between: 500,         // pauza mezi tahy
+  reducedFade: 150,     // omezení pohybu: jen prolnutí při pádu
 };
+
+/** Délka v ms podle tempa hry. */
+export function scaled(ms: number, tempo: Tempo = "normal"): number {
+  return Math.round(ms * TEMPO_FACTOR[tempo]);
+}
+
+/** CSS proměnné s délkami animací, které běží jen v CSS (kostka, pulz kroužku, značky, vlajka). */
+export function tempoCssVars(tempo: Tempo): Record<string, string> {
+  const ms = (v: number) => `${scaled(v, tempo)}ms`;
+  return {
+    "--roll-ms": ms(TIMING.roll),
+    "--pulse-ms": ms(TIMING.blocked),
+    "--pop-ms": ms(TIMING.markPop),
+    "--badge-ms": ms(TIMING.badgePop),
+    "--flag-ms": ms(TIMING.summit),
+    "--flash-ms": ms(TIMING.flash),
+  };
+}
+
+/** Události, které jsou účinkem hory: před nimi je po příchodu pauza TIMING.land. */
+function isLandingEffect(e: GameEvent | undefined): boolean {
+  if (!e) return false;
+  switch (e.type) {
+    case "magnetFall":
+    case "move":
+    case "wait":
+    case "stationEnter":
+    case "colorRoll":
+    case "knockOut":
+      return true;
+    case "extraRoll":
+      return e.reason === "field";
+    default:
+      return false;
+  }
+}
+
+/** Plynulý rozjezd a dojezd po trase. */
+function easeInOut(t: number): number {
+  return t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t);
+}
 
 /** Zobrazovaný stav přesně podle veřejného pohledu enginu. */
 export function displayFromView(view: PublicView, prev?: DisplayState): DisplayState {
@@ -131,6 +189,8 @@ export function buildTimeline(
 ): Frame[] {
   const board = opts.board ?? BOARD;
   const reduced = !!opts.reduced;
+  const tempo = opts.tempo ?? "normal";
+  const T = (ms: number) => scaled(ms, tempo);
   const frames: Frame[] = [];
   const narration = narrate(events, nameOf);
   let st: DisplayState = {
@@ -156,7 +216,13 @@ export function buildTimeline(
     [id]: { kind, nonce: (st.fx[id]?.nonce ?? 0) + 1, ms },
   });
   const xyOf = (id: string): XY => {
-    const places = climbers.map((c, index) => ({ id: c.id, index, color: c.seat.color, pos: st.positions[c.id] ?? 0 }));
+    const places = climbers.map((c, index) => ({
+      id: c.id,
+      index,
+      color: c.seat.color,
+      pos: st.positions[c.id] ?? 0,
+      waiting: (st.skipTurns[c.id] ?? 0) > 0,
+    }));
     return st.overrides[id] ?? layoutTokens(places, board)[id] ?? [0, 0];
   };
 
@@ -171,16 +237,16 @@ export function buildTimeline(
       return;
     }
     const [x] = xyOf(id);
-    push({ ...patch, overrides: { ...st.overrides, [id]: [x, TABLE_Y] }, moveMs: drop, moveEase: "ease-in", fx: fx(id, "tip", drop) }, drop);
-    push({ fx: fx(id, "lying") }, lie);
+    push({ ...patch, overrides: { ...st.overrides, [id]: [x, TABLE_Y] }, moveMs: T(drop), moveEase: "ease-in", fx: fx(id, "tip", T(drop)) }, T(drop));
+    push({ fx: fx(id, "lying") }, T(lie));
     push({
       ...risePatch,
       positions: { ...st.positions, [id]: to },
       overrides: without(st.overrides, id),
-      moveMs: rise,
+      moveMs: T(rise),
       moveEase: "ease-out",
-      fx: fx(id, "rise", rise),
-    }, rise);
+      fx: fx(id, "rise", T(rise)),
+    }, T(rise));
   };
 
   for (let i = 0; i < events.length; i++) {
@@ -202,7 +268,8 @@ export function buildTimeline(
         break;
 
       case "roll":
-        push({ current: e.climberId, die: e.value, dieNonce: st.dieNonce + 1 }, TIMING.roll);
+        // 900 ms kostka, 400 ms je vidět výsledek
+        push({ current: e.climberId, die: e.value, dieNonce: st.dieNonce + 1 }, T(TIMING.roll) + T(TIMING.rollShow));
         break;
 
       case "colorRoll":
@@ -210,23 +277,24 @@ export function buildTimeline(
           colorDie: e.color,
           colorNonce: st.colorNonce + 1,
           atStation: { ...st.atStation, [e.climberId]: false },
-        }, TIMING.roll);
+        }, T(TIMING.roll) + T(TIMING.rollShow));
         break;
 
       case "step": {
-        // 200 ms na horu, celý pohyb nejvýš 1200 ms: délka celé souvislé řady kroků.
-        let first = i;
-        while (first > 0 && events[first - 1].type === "step") first--;
-        let total = 0;
-        for (let k = first; events[k]?.type === "step"; k++) total++;
-        const per = Math.min(TIMING.stepMax, Math.floor(TIMING.stepTotalMax / total));
-        push({ positions: { ...st.positions, [e.climberId]: e.to }, moveMs: per, moveEase: "ease-in-out" }, per);
+        // Jedna hora s poskokem, bez stropu na celý pohyb.
+        const ms = T(TIMING.step);
+        push({
+          positions: { ...st.positions, [e.climberId]: e.to },
+          moveMs: ms,
+          moveEase: "ease-in-out",
+          fx: fx(e.climberId, "step", ms),
+        }, ms);
         break;
       }
 
       case "blocked": {
         const from = xyOf(e.climberId);
-        const half = Math.round(TIMING.blocked / 2);
+        const half = Math.round(T(TIMING.blocked) / 2);
         const mid = lerp(from, fieldCenter(e.at, board), 0.4);
         push({
           overrides: { ...st.overrides, [e.climberId]: mid },
@@ -239,7 +307,7 @@ export function buildTimeline(
       }
 
       case "overshoot":
-        push({ fx: fx(e.climberId, "sway") }, TIMING.info);
+        push({ fx: fx(e.climberId, "sway", T(TIMING.info)) }, T(TIMING.info));
         break;
 
       case "move": {
@@ -247,14 +315,17 @@ export function buildTimeline(
         if (e.how === "posun" || e.how === "lanovka") {
           const route = findRoute(e.from, e.to, board);
           const lanovka = e.how === "lanovka";
-          const total = lanovka ? TIMING.lanovka : TIMING.posun;
+          const total = T(lanovka ? TIMING.lanovka : TIMING.posun);
           if (route && !reduced) {
-            const segs = lanovka ? 11 : 8;
+            // Po trase s plynulým rozjezdem a dojezdem (krátké úseky, aby byla vidět křivka).
+            const segs = lanovka ? 20 : 14;
             const per = Math.round(total / segs);
-            const pts = routePoints(route, segs, board);
-            pts.slice(0, -1).forEach((p) => {
+            const p0 = fieldCenter(route.from, board);
+            const p1 = fieldCenter(route.to, board);
+            for (let k = 1; k < segs; k++) {
+              const p = bezier(p0, route.control, p1, easeInOut(k / segs));
               push({ overrides: { ...st.overrides, [id]: p }, moveMs: per, moveEase: "linear", ride: lanovka ? id : null }, per);
-            });
+            }
             push({
               positions: { ...st.positions, [id]: e.to },
               overrides: without(st.overrides, id),
@@ -266,11 +337,13 @@ export function buildTimeline(
             push({ positions: { ...st.positions, [id]: e.to }, moveMs: total, moveEase: "ease-in-out" }, total);
           }
         } else if (e.how === "zpet") {
-          push({ positions: { ...st.positions, [id]: e.to }, moveMs: TIMING.zpet, moveEase: "ease-in-out" }, TIMING.zpet);
+          // 1 zpět: poskok o horu dolů
+          const ms = T(TIMING.zpet);
+          push({ positions: { ...st.positions, [id]: e.to }, moveMs: ms, moveEase: "ease-in-out", fx: fx(id, "step", ms) }, ms);
         } else {
-          // černá: krátké kývnutí a sjezd na horu 13 po přímce
-          push({ fx: fx(id, "wobble"), atStation: { ...st.atStation, [id]: false } }, TIMING.cernaSway);
-          push({ positions: { ...st.positions, [id]: e.to }, moveMs: TIMING.cernaSlide, moveEase: "ease-in" }, TIMING.cernaSlide);
+          // černá: kývnutí a sjezd na horu 13 po přímce
+          push({ fx: fx(id, "wobble", T(TIMING.cernaSway)), atStation: { ...st.atStation, [id]: false } }, T(TIMING.cernaSway));
+          push({ positions: { ...st.positions, [id]: e.to }, moveMs: T(TIMING.cernaSlide), moveEase: "ease-in" }, T(TIMING.cernaSlide));
         }
         break;
       }
@@ -279,58 +352,74 @@ export function buildTimeline(
         // Magnetický pád: kývání, odpadnutí na stůl, ležení, zvednutí a přesun na cíl pádu.
         const id = e.climberId;
         const rev = st.revealed[id] ?? [];
-        if (!reduced) push({ fx: fx(id, "magnetSway") }, TIMING.fallSway);
+        if (!reduced) push({ fx: fx(id, "magnetSway", T(TIMING.fallSway)) }, T(TIMING.fallSway));
         fallToTable(id, e.to, TIMING.fallDrop, TIMING.fallLie, TIMING.fallRise, {
           revealed: { ...st.revealed, [id]: rev.includes(e.at) ? rev : [...rev, e.at] },
           atStation: { ...st.atStation, [id]: false },
         }, {
-          // odznak čekání až po zvednutí figurky
+          // odznak čekání až po zvednutí figurky (na hoře 13 jde čekající na barevné místo)
           skipTurns: { ...st.skipTurns, [id]: e.wait },
         });
         break;
       }
 
       case "wait":
-        push({ skipTurns: { ...st.skipTurns, [e.climberId]: e.turns }, fx: fx(e.climberId, "sway") }, TIMING.info);
+        push({ skipTurns: { ...st.skipTurns, [e.climberId]: e.turns }, fx: fx(e.climberId, "sway", T(TIMING.info)) }, T(TIMING.info));
         break;
 
       case "skip":
-        push({ current: e.climberId, skipTurns: { ...st.skipTurns, [e.climberId]: e.remaining }, fx: fx(e.climberId, "sway") }, TIMING.info);
+        // Na hoře 13 přejde horolezec po posledním čekání z barevného místa na kotouč.
+        push({
+          current: e.climberId,
+          skipTurns: { ...st.skipTurns, [e.climberId]: e.remaining },
+          fx: fx(e.climberId, "sway", T(TIMING.info)),
+          moveMs: T(TIMING.step),
+          moveEase: "ease-in-out",
+        }, T(TIMING.info));
         break;
 
       case "stationMiss":
-        push({ fx: fx(e.climberId, "sway") }, TIMING.info);
+        push({ fx: fx(e.climberId, "sway", T(TIMING.info)) }, T(TIMING.info));
         break;
 
       case "stationEnter":
-        push({ atStation: { ...st.atStation, [e.climberId]: true } }, TIMING.stationEnter);
+        push({ atStation: { ...st.atStation, [e.climberId]: true } }, T(TIMING.stationEnter));
         break;
 
       case "extraRoll":
-        push({}, TIMING.extraRoll);
+        push({}, T(TIMING.extraRoll));
         break;
 
       case "knockOut":
-        // Oběť spadne na stůl a přesune se pod horu.
+        // Oběť spadne na stůl a přejde na své startovní místo pod horou; přijde o stanici i čekání.
         fallToTable(e.victimId, e.to, TIMING.knockDrop, TIMING.knockLie, TIMING.knockRise, {
           atStation: { ...st.atStation, [e.victimId]: false },
+          skipTurns: { ...st.skipTurns, [e.victimId]: 0 },
         });
         break;
 
       case "summit":
         push({
-          fx: fx(e.climberId, "hop"),
+          fx: fx(e.climberId, "hop", T(TIMING.summitHop)),
           flagNonce: st.flagNonce + 1,
           atStation: { ...st.atStation, [e.climberId]: false },
           skipTurns: { ...st.skipTurns, [e.climberId]: 0 },
-          moveMs: 300,
+          moveMs: T(300),
           moveEase: "ease-out",
-        }, TIMING.summit);
+        }, T(TIMING.summit));
         break;
 
       case "gameWon":
       case "gameOver":
         break;
+    }
+
+    // Pauza po příchodu na horu, než se projeví její účinek (konec řady kroků, posun, pád na jinou horu).
+    const landed =
+      (e.type === "step" && events[i + 1]?.type !== "step") || e.type === "move" || e.type === "magnetFall";
+    if (landed && !reduced && frames.length > before && isLandingEffect(events[i + 1])) {
+      const lastFrame = frames[frames.length - 1];
+      frames[frames.length - 1] = { ...lastFrame, duration: lastFrame.duration + T(TIMING.land) };
     }
 
     // Hlášky, které patří za tuto událost.

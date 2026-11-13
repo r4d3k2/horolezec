@@ -105,6 +105,7 @@ export function Board({ view, display, showMarks = true, onTap, board = BOARD }:
     index,
     color: c.seat.color,
     pos: display.positions[c.id] ?? c.pos,
+    waiting: (display.skipTurns[c.id] ?? 0) > 0,
   }));
   const layout = layoutTokens(places, board);
 

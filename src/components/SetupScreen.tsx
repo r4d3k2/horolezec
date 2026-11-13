@@ -1,14 +1,14 @@
 // Nastavení: kdo hraje (proti počítači / více lidí na jednom zařízení), 2–4 místa, barvy, jména,
-// Člověk/Počítač, volitelná pravidla se značkou „výklad“. Pamatuje si poslední nastavení.
+// Člověk/Počítač, volitelná pravidla se značkou „výklad“, statistiky. Pamatuje si poslední nastavení.
 
 import { useState } from "react";
 import { CLIMBER_COLORS, type ClimberColor } from "../data/board";
 import { AI_NAMES, pickAiName } from "../data/names";
 import { seatsForMode } from "../data/setupDefaults";
-import { RULE_TOGGLES, UI } from "../data/texts";
+import { kola, RULE_TOGGLES, UI, vyhry } from "../data/texts";
 import type { GameSetup, SeatKind, SeatSetup } from "../lib/engine";
 import type { Rules } from "../lib/rules";
-import type { PlayMode, Settings } from "../lib/storage";
+import { clearStats, emptyStats, loadStats, type PlayMode, type Settings, type Stats } from "../lib/storage";
 import { Pill } from "./Pill";
 import { Toggle } from "./Toggle";
 
@@ -34,6 +34,8 @@ export function SetupScreen({ settings, hasSaved, onResume, onStart }: Props) {
   const [count, setCount] = useState<number>(settings.count);
   const [seats, setSeats] = useState<SeatSetup[]>(settings.seats);
   const [rules, setRules] = useState<Rules>(settings.rules);
+  const [stats, setStats] = useState<Stats>(() => loadStats());
+  const [confirmClear, setConfirmClear] = useState(false);
 
   const active = seats.slice(0, count);
 
@@ -102,7 +104,7 @@ export function SetupScreen({ settings, hasSaved, onResume, onStart }: Props) {
     const allSeats = seats.map((s, i) => (i < count ? finalSeats[i] : s));
     onStart(
       { seats: finalSeats, rules: { ...rules } },
-      { ...settings, schema: 2, mode, count, seats: allSeats, rules: { ...rules } },
+      { ...settings, schema: 3, mode, count, seats: allSeats, rules: { ...rules } },
     );
   };
 
@@ -230,7 +232,74 @@ export function SetupScreen({ settings, hasSaved, onResume, onStart }: Props) {
           </button>
         </>
       ) : null}
+
+      {stats.games > 0 ? <StatsSection stats={stats} onClear={() => setConfirmClear(true)} /> : null}
+
+      {confirmClear ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop">
+          <div role="alertdialog" aria-modal="true" aria-labelledby="clear-title" className="fade-in w-full max-w-[360px] rounded-2xl border border-line bg-surface p-5 flex flex-col gap-4 shadow-xl">
+            <p id="clear-title" className="text-ink">{UI.statsClearConfirm}</p>
+            <div className="flex gap-2">
+              <button type="button" autoFocus onClick={() => setConfirmClear(false)} className="flex-1 h-12 rounded-xl border border-line bg-surface-2 text-ink font-semibold">
+                {UI.statsClearNo}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  clearStats();
+                  setStats(emptyStats());
+                  setConfirmClear(false);
+                }}
+                className="flex-1 h-12 rounded-xl bg-accent text-accent-contrast font-semibold"
+              >
+                {UI.statsClearYes}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
+  );
+}
+
+/** Statistiky dohraných výprav: počet, nejkratší výstup a výhry podle jména. */
+function StatsSection({ stats, onClear }: { stats: Stats; onClear: () => void }) {
+  const wins = Object.entries(stats.wins).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "cs"));
+  return (
+    <section className="rounded-2xl border border-line bg-surface p-4 flex flex-col gap-3" aria-labelledby="stats-title">
+      <h2 id="stats-title" className="text-[22px] text-ink">{UI.stats}</h2>
+      <dl className="grid grid-cols-2 gap-2">
+        <div className="rounded-xl bg-surface-2 px-3 py-2">
+          <dt className="text-sm text-ink-soft">{UI.statsGames}</dt>
+          <dd className="text-2xl font-semibold text-ink tabular">{stats.games}</dd>
+        </div>
+        <div className="rounded-xl bg-surface-2 px-3 py-2 min-w-0">
+          <dt className="text-sm text-ink-soft">{UI.statsShortest}</dt>
+          <dd className="text-ink">
+            {stats.shortest ? (
+              <>
+                <span className="text-2xl font-semibold tabular">{kola(stats.shortest.turns)}</span>
+                <span className="block text-sm text-ink-soft truncate">{stats.shortest.name}</span>
+              </>
+            ) : "–"}
+          </dd>
+        </div>
+      </dl>
+      <div>
+        <h3 className="font-body font-semibold text-ink mb-1">{UI.statsWins}</h3>
+        <ul className="flex flex-col">
+          {wins.map(([name, n]) => (
+            <li key={name} className="flex items-center justify-between gap-3 py-1.5 border-b border-line last:border-b-0">
+              <span className="text-ink truncate">{name}</span>
+              <span className="text-ink-soft tabular whitespace-nowrap">{vyhry(n)}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <button type="button" onClick={onClear} className="self-start h-11 px-4 rounded-xl border border-line bg-surface-2 text-ink font-semibold">
+        {UI.statsClear}
+      </button>
+    </section>
   );
 }
 

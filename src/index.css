@@ -202,6 +202,12 @@
   background: var(--backdrop);
 }
 
+/* Výřez a domovská lišta iPhonu (viewport-fit=cover, spuštění z plochy). Na kořeni aplikace,
+   který má min-height 100svh a border-box, takže okraje nepřidají scroll. */
+.safe-area {
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
 /* --- Deska ------------------------------------------------------------- */
 
 .board-svg {
@@ -217,6 +223,13 @@
 
 .field-hit {
   cursor: pointer;
+  outline: none;
+}
+
+/* Focus na hoře desky: obrys v SVG (outline se na SVG prvcích v Safari nekreslí). */
+.field-hit:focus-visible {
+  stroke: var(--accent);
+  stroke-width: 3;
 }
 
 /* Figurka: vnější g = pozice (CSS transform v px), vnitřní g = efekty. */
@@ -232,13 +245,22 @@
   transform-origin: 50% 100%;
 }
 
-.token-fx.fx-hop { animation: token-hop 520ms ease-out; }
+/* Výchozí délky odpovídají tempu Normálně; přehrávač je přepisuje inline podle Tempa hry. */
+.token-fx.fx-hop { animation: token-hop 700ms ease-out; }
+.token-fx.fx-step { animation: token-step 420ms linear; }
 .token-fx.fx-sway { animation: token-sway 400ms ease-in-out; }
-.token-fx.fx-wobble { animation: token-sway 250ms ease-in-out; }
-.token-fx.fx-magnetSway { animation: token-magnet 350ms ease-in-out forwards; }
-.token-fx.fx-tip { animation: token-tip 450ms ease-in forwards; }
+.token-fx.fx-wobble { animation: token-sway 400ms ease-in-out; }
+.token-fx.fx-magnetSway { animation: token-magnet 600ms ease-in-out forwards; }
+.token-fx.fx-tip { animation: token-tip 650ms ease-in forwards; }
 .token-fx.fx-lying { transform: rotate(90deg); }
-.token-fx.fx-rise { animation: token-rise 600ms ease-out forwards; }
+.token-fx.fx-rise { animation: token-rise 1000ms ease-out forwards; }
+
+/* Krok na další horu: figurka se zvedne asi o 12 jednotek a v oblouku dopadne. */
+@keyframes token-step {
+  0% { transform: translateY(0); animation-timing-function: cubic-bezier(0.33, 0.66, 0.66, 1); }
+  50% { transform: translateY(-12px); animation-timing-function: cubic-bezier(0.33, 0, 0.66, 0.34); }
+  100% { transform: translateY(0); }
+}
 
 @keyframes token-hop {
   0% { transform: translateY(0); }
@@ -276,19 +298,21 @@
 .ring-pulse {
   transform-box: fill-box;
   transform-origin: 50% 50%;
-  animation: ring-pulse 450ms ease-out;
+  animation: ring-pulse var(--pulse-ms, 900ms) ease-out;
 }
 
 @keyframes ring-pulse {
   0% { transform: scale(1); }
-  40% { transform: scale(1.22); }
+  25% { transform: scale(1.22); }
+  50% { transform: scale(1); }
+  70% { transform: scale(1.12); }
   100% { transform: scale(1); }
 }
 
 .mark-pop {
   transform-box: fill-box;
   transform-origin: 50% 50%;
-  animation: mark-pop 200ms ease-out;
+  animation: mark-pop var(--pop-ms, 200ms) ease-out;
 }
 
 @keyframes mark-pop {
@@ -299,7 +323,7 @@
 .badge-pop {
   transform-box: fill-box;
   transform-origin: 50% 50%;
-  animation: mark-pop 250ms ease-out;
+  animation: mark-pop var(--badge-ms, 250ms) ease-out;
 }
 
 .flag-cloth {
@@ -308,7 +332,7 @@
 }
 
 .flag-cloth.flag-wave {
-  animation: flag-wave 800ms ease-in-out;
+  animation: flag-wave var(--flag-ms, 1400ms) ease-in-out;
 }
 
 @keyframes flag-wave {
@@ -330,7 +354,7 @@
   width: 100%;
   height: 100%;
   transform-style: preserve-3d;
-  transition: transform 700ms cubic-bezier(0.2, 0.75, 0.25, 1);
+  transition: transform var(--roll-ms, 900ms) cubic-bezier(0.2, 0.75, 0.25, 1);
 }
 
 .die3d-face {
@@ -373,7 +397,7 @@
 }
 
 .strip-flash {
-  animation: strip-flash 1200ms ease-out;
+  animation: strip-flash var(--flash-ms, 1200ms) ease-out;
 }
 
 @keyframes strip-flash {

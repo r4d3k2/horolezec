@@ -73,6 +73,14 @@ export type PublicView = Omit<GameState, "climbers" | "fieldPoles"> & { climbers
 
 const CLIMBER_IDS: ClimberId[] = ["c0", "c1", "c2", "c3"];
 
+/** Hora 13: vedle kotouče má dvě vedlejší místa (spots.hub13), unese víc horolezců. */
+export const HUB_FIELD = 13;
+
+/** Pole, na kterých může stát libovolný počet horolezců: start, hora 13 a vrchol. */
+export function isSharedField(n: number, board: BoardDef = BOARD): boolean {
+  return n <= 0 || n === HUB_FIELD || n >= board.summit;
+}
+
 /** Hory se zkouškou magnetu (mají pravidlo pádu), vzestupně. */
 export function fallFields(board: BoardDef = BOARD): number[] {
   return board.fields.filter((f) => f.fall).map((f) => f.n);
@@ -266,7 +274,7 @@ function rollTurn(ctx: Ctx): void {
   // 5. Příchod na horu.
   land(ctx, c, target);
 
-  // 6. Volitelná pravidla.
+  // 6. Záznam tahu a volitelný hod navíc za šestku (vyhazování už proběhlo při příchodu).
   finishMove(ctx, c, from);
   if (
     s.rules.sixAgain && value === 6 && !ctx.abnormal && !s.extraRoll &&
@@ -303,15 +311,15 @@ function land(ctx: Ctx, c: ClimberState, n: number): void {
       c.pos = to;
       c.skipTurns = wait;
       ctx.events.push({ type: "magnetFall", climberId: c.id, at: n, to, wait });
-      // Pád na jinou horu se zkouškou (25 → 13): zkouší se i tam.
-      if (to !== n && to >= 1) {
-        const toDef = fieldAt(ctx, to);
-        if (toDef?.fall) land(ctx, c, to);
-      }
+      // Pád na jinou horu je nový příchod: na 13 se zkouší magnet (25 → 13), na 1 a 11 se vyhazuje.
+      if (to !== n && to >= 1) land(ctx, c, to);
       return;
     }
     if (!c.knownSafe.includes(n)) c.knownSafe.push(n);
   }
+
+  // Vyhazování: horolezec na hoře zůstává, kdo tu stál, jde zpět pod horu (i před hodem navíc z 5 a 15).
+  knockOut(ctx, c, n);
 
   // b) Účinek hory.
   const effect = def.effect;
@@ -394,20 +402,23 @@ function reachSummit(ctx: Ctx, c: ClimberState): void {
   }
 }
 
-/** Po přesunu: vyhazování a záznam posledního tahu. */
-function finishMove(ctx: Ctx, c: ClimberState, from: number): void {
+/** Vyhazování (knockOut): na hoře může stát jen jeden horolezec, mimo start, horu 13 a vrchol. */
+function knockOut(ctx: Ctx, c: ClimberState, n: number): void {
   const { s, board } = ctx;
-  if (c.pos !== from) s.lastMove = { climberId: c.id, from, to: c.pos };
-  if (!s.rules.knockOut || c.pos === from) return;
-  const p = c.pos;
-  if (p === 0 || p === board.colorDie.blackTo || p === board.summit) return;
+  if (!s.rules.knockOut || isSharedField(n, board)) return;
   for (const other of s.climbers) {
-    if (other.id === c.id || other.pos !== p || other.finishedRank !== null) continue;
+    if (other.id === c.id || other.pos !== n || other.finishedRank !== null) continue;
     other.pos = 0;
     other.atStation = false;
+    other.skipTurns = 0;
     c.stats.knockedOthers += 1;
-    ctx.events.push({ type: "knockOut", climberId: c.id, victimId: other.id, at: p, to: 0 });
+    ctx.events.push({ type: "knockOut", climberId: c.id, victimId: other.id, at: n, to: 0 });
   }
+}
+
+/** Po přesunu: záznam posledního tahu (odkud → kam). */
+function finishMove(ctx: Ctx, c: ClimberState, from: number): void {
+  if (c.pos !== from) ctx.s.lastMove = { climberId: c.id, from, to: c.pos };
 }
 
 /** Na tahu je další horolezec v pořadí, který nedokončil (při hodu navíc zůstává stejný). */

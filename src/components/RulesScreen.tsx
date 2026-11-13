@@ -12,7 +12,7 @@ interface Props {
 
 export function RulesScreen({ rules, onClose }: Props) {
   return (
-    <div className="fixed inset-0 z-40 overflow-y-auto bg-bg" role="dialog" aria-modal="true" aria-labelledby="rules-title">
+    <div className="safe-area fixed inset-0 z-40 overflow-y-auto bg-bg" role="dialog" aria-modal="true" aria-labelledby="rules-title">
       <div className="mx-auto w-full max-w-[720px] px-4 pb-10">
         <header className="sticky top-0 z-10 flex items-center justify-between gap-3 py-3 bg-bg">
           <h1 id="rules-title" className="text-[28px] text-ink">{UI.rules}</h1>

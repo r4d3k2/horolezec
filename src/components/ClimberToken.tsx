@@ -38,12 +38,13 @@ function ClimberTokenImpl({ number, color, name, x, y, hidden, fx, atStation, sk
         </g>
       ) : null}
       {active ? <ellipse cx="0" cy="0.5" rx="10" ry="3.2" fill={fill} opacity="0.35" /> : null}
+      {/* stín zůstává na zemi, i když figurka poskočí */}
+      <ellipse cx="0" cy="0.6" rx="7" ry="1.8" fill="var(--climber-ink)" opacity="0.25" />
       <g
         key={fx?.nonce ?? 0}
         className={`token-fx fx-${kind}`}
         style={fx?.ms ? { animationDuration: `${fx.ms}ms` } : undefined}
       >
-        <ellipse cx="0" cy="0.6" rx="7" ry="1.8" fill="var(--climber-ink)" opacity="0.25" />
         {/* seříznutá koule */}
         <path d="M -4.9 0 A 7 7 0 1 1 4.9 0 Z" fill={fill} stroke="var(--climber-ink)" strokeWidth="1" strokeLinejoin="round" />
         {/* tělo */}
